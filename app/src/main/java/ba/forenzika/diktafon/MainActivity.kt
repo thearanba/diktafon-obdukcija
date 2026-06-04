@@ -148,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Rekurzivno kopira assets/<assetPath>/** u dest (overwrite — uvijek svjež template). */
+    // Rekurzivno kopira assets/<assetPath> u dest (overwrite — uvijek svjež template).
     private fun copyAssetDir(assetPath: String, dest: File) {
         val children = assets.list(assetPath) ?: emptyArray()
         if (children.isEmpty()) {
