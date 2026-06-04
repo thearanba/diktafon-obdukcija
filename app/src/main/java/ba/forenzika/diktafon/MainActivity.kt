@@ -43,7 +43,7 @@ class MainActivity : AppCompatActivity() {
         const val MENU_SETTINGS = 1
         const val MENU_RELOAD = 2
         const val REQ_AUDIO = 100
-        const val BASE_URL = "https://appassets.androidhost/index.html"
+        const val BASE_URL = "https://appassets.androidplatform.net/index.html"
     }
 
     private lateinit var webView: WebView
