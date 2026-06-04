@@ -37,6 +37,13 @@ GROQ_TRANSCRIBE_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 DEFAULT_TIMEOUT = 90  # sekundi
 
+# Cloudflare (ispred api.groq.com) blokira default "Python-urllib/x.y" User-Agent
+# greškom 1010. Šaljemo realan UA da prođe bot-zaštitu.
+USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 15; SM-S938B) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+)
+
 
 class ApiError(Exception):
     """Greška iz vanjskog API-ja. status = HTTP kod (ili 0 za mrežnu grešku)."""
@@ -75,6 +82,7 @@ def claude_messages(api_key: str, model: str, system, messages: list,
     req.add_header("content-type", "application/json")
     req.add_header("x-api-key", api_key)
     req.add_header("anthropic-version", ANTHROPIC_VERSION)
+    req.add_header("User-Agent", USER_AGENT)
 
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
@@ -163,6 +171,7 @@ def groq_transcribe(api_key: str, audio_bytes: bytes, filename: str,
     req = urllib.request.Request(GROQ_TRANSCRIBE_URL, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {api_key}")
     req.add_header("Content-Type", ct_header)
+    req.add_header("User-Agent", USER_AGENT)
 
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
