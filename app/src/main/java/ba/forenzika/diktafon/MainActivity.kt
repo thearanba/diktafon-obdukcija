@@ -108,12 +108,11 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
-                runOnUiThread {
-                    val wanted = request.resources.filter {
-                        it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                    }.toTypedArray()
-                    if (wanted.isNotEmpty()) request.grant(wanted) else request.deny()
-                }
+                // Odobri SINHRONO unutar callback-a (onPermissionRequest je već na UI niti).
+                val wanted = request.resources.filter {
+                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                }.toTypedArray()
+                if (wanted.isNotEmpty()) request.grant(wanted) else request.deny()
             }
 
             override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
