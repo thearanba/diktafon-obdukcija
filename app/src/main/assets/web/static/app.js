@@ -1569,30 +1569,12 @@ function startPolling() {
 }
 
 async function pollServerForChanges() {
-  // Skip ako je tab nevidljiv (battery saving)
+  // STANDALONE aplikacija (jedan uređaj): nema drugog uređaja koji bi mijenjao drafte,
+  // pa nema stvarnog konflikta. Uklonjena je provjera „server ima noviju verziju"
+  // (lažni baner) i nasilni re-render otvorenog modala. Ostaje samo osvježavanje keša
+  // liste draftova (bezopasno, ne dira DOM).
   if (document.hidden) return;
-
-  // 1. Osvježi listu draftova
-  const list = await refreshDraftsFromServer();
-  if (!list) return;  // server unreachable, šuti
-
-  // 2. Ako je modal otvoren, re-render listu
-  const openModal = document.querySelector(".modal-overlay");
-  if (openModal) {
-    closeDraftsModal(openModal);
-    openDraftsModal();
-  }
-
-  // 3. Provjeri da li server ima noviju verziju TRENUTNO otvorenog drafta
-  const currentId = STATE.currentDraftId;
-  if (!currentId) return;
-  const serverEntry = list.find(d => d.id === currentId);
-  if (!serverEntry) return;
-  const myTs = STATE.lastKnownServerTs || 0;
-  // Treshold: razlika veća od 2s (da ne reaguje na vlastiti upload)
-  if (serverEntry.updatedAt > myTs + 2000) {
-    showConflictBanner(currentId, serverEntry.updatedAt);
-  }
+  await refreshDraftsFromServer();
 }
 
 // === Konflikt banner ===
