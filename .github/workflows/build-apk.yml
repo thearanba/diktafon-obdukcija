@@ -31,6 +31,14 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      # Stabilan debug potpis između buildova → APK se može instalirati PREKO postojećeg
+      # (bez deinstalacije). Prvi build napravi keystore, ostali ga ponovo koriste.
+      - name: Cache debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 

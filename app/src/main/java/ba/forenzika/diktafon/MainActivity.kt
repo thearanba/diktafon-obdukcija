@@ -1,6 +1,7 @@
 package ba.forenzika.diktafon
 
 import android.Manifest
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -18,6 +19,7 @@ import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -43,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         const val MENU_SETTINGS = 1
         const val MENU_RELOAD = 2
         const val REQ_AUDIO = 100
+        const val REQ_FILE = 200
         const val BASE_URL = "https://appassets.androidplatform.net/index.html"
     }
 
@@ -50,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private val pyExecutor = Executors.newFixedThreadPool(4)
     @Volatile private var pyApi: PyObject? = null
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -114,6 +118,39 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "WebView: ${msg.message()} @${msg.sourceId()}:${msg.lineNumber()}")
                 return true
             }
+
+            // Omogući <input type="file"> (Auto-popuni iz naredbe — biranje PDF/slike)
+            override fun onShowFileChooser(
+                view: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: WebChromeClient.FileChooserParams
+            ): Boolean {
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = callback
+                return try {
+                    startActivityForResult(params.createIntent(), REQ_FILE)
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "onShowFileChooser greška: ${e.message}", e)
+                    filePathCallback = null
+                    false
+                }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_FILE) {
+            val cb = filePathCallback
+            filePathCallback = null
+            if (cb == null) return
+            val result =
+                if (resultCode == Activity.RESULT_OK && data != null)
+                    WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+                else null
+            cb.onReceiveValue(result)
         }
     }
 
