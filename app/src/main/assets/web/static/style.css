@@ -644,6 +644,22 @@ html, body {
   flex-wrap: wrap;
 }
 
+/* Red ispod finalnog teksta (Doradi / Vrati template / Obriši finalni) — uvijek
+   u JEDNOM redu: bez prelamanja, ravnomjerna podjela širine, manji font. */
+.dict-controls.final-controls {
+  flex-wrap: nowrap;
+}
+.dict-controls.final-controls > button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 button {
   font-family: inherit;
   font-size: 15px;

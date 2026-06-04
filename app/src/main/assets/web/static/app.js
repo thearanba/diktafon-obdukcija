@@ -619,7 +619,7 @@ function renderSingleBody(s) {
       <label class="field-label" style="margin-top:14px;">Finalni tekst (ide u zapisnik):</label>
       <textarea class="dict-textarea final" data-section-id="${s.id}" data-target="final"
         placeholder="Ovdje će se pojaviti spojen tekst nakon klika na 🪄 Spoji.">${escapeHtml(sec.final || '')}</textarea>
-      <div class="dict-controls">
+      <div class="dict-controls final-controls">
         <button class="btn-cleanup" data-cleanup="${s.id}">✨ Doradi</button>
         ${templateText ? `<button class="btn-use-default" data-use-default="${s.id}">↺ Vrati template</button>` : ''}
         <button class="btn-clear-section" data-clear-final="${s.id}">✕ Obriši finalni</button>
