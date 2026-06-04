@@ -167,7 +167,7 @@ class MainActivity : AppCompatActivity() {
         /** Asinhroni poziv Python dispatch-a. Rezultat se vraća JS-u preko __nativeResolve. */
         @JavascriptInterface
         fun call(reqId: String, endpoint: String, payloadJson: String) {
-            pyExecutor.submit {
+            pyExecutor.execute {
                 val resultJson = try {
                     val api = pyApi ?: throw IllegalStateException("Python još nije spreman")
                     api.callAttr("dispatch", endpoint, payloadJson).toString()
@@ -267,7 +267,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: IOException) {
                 WebResourceResponse(
                     "text/plain", "utf-8", 404, "Not Found",
-                    emptyMap(), ByteArrayInputStream(ByteArray(0))
+                    emptyMap<String, String>(), ByteArrayInputStream(ByteArray(0))
                 )
             }
         }
