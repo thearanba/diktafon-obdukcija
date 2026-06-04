@@ -26,6 +26,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.webkit.WebViewAssetLoader
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
@@ -54,6 +55,7 @@ class MainActivity : AppCompatActivity() {
     private val pyExecutor = Executors.newFixedThreadPool(4)
     @Volatile private var pyApi: PyObject? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,7 +121,8 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
-            // Omogući <input type="file"> (Auto-popuni iz naredbe — biranje PDF/slike)
+            // Omogući <input type="file"> (Auto-popuni iz naredbe):
+            // birač fajlova (PDF/slika) + opcija da se naredba SLIKA kamerom.
             override fun onShowFileChooser(
                 view: WebView,
                 callback: ValueCallback<Array<Uri>>,
@@ -127,8 +130,21 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 filePathCallback?.onReceiveValue(null)
                 filePathCallback = callback
+                cameraPhotoUri = null
                 return try {
-                    startActivityForResult(params.createIntent(), REQ_FILE)
+                    val contentIntent = params.createIntent()  // fajlovi (image/* + pdf)
+                    val cameraIntent = createCameraIntent()     // null ako nema kamere
+                    val chooser = Intent(Intent.ACTION_CHOOSER).apply {
+                        putExtra(Intent.EXTRA_INTENT, contentIntent)
+                        putExtra(Intent.EXTRA_TITLE, "Odaberi naredbu (fajl) ili je slikaj")
+                        if (cameraIntent != null) {
+                            putExtra(
+                                Intent.EXTRA_INITIAL_INTENTS,
+                                arrayOf<android.os.Parcelable>(cameraIntent)
+                            )
+                        }
+                    }
+                    startActivityForResult(chooser, REQ_FILE)
                     true
                 } catch (e: Exception) {
                     Log.e(TAG, "onShowFileChooser greška: ${e.message}", e)
@@ -139,6 +155,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Intent za fotografisanje naredbe; slika ide u app-cache preko FileProvider-a. */
+    private fun createCameraIntent(): Intent? {
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        if (intent.resolveActivity(packageManager) == null) return null
+        return try {
+            val dir = File(cacheDir, "camera").apply { mkdirs() }
+            val file = File(dir, "naredba_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            cameraPhotoUri = uri
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            intent
+        } catch (e: Exception) {
+            Log.e(TAG, "createCameraIntent greška: ${e.message}", e)
+            null
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -146,11 +180,17 @@ class MainActivity : AppCompatActivity() {
             val cb = filePathCallback
             filePathCallback = null
             if (cb == null) return
-            val result =
-                if (resultCode == Activity.RESULT_OK && data != null)
-                    WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-                else null
+            var result: Array<Uri>? = null
+            if (resultCode == Activity.RESULT_OK) {
+                if (data == null || (data.data == null && data.clipData == null)) {
+                    // Kamera je upisala sliku u cameraPhotoUri (ne vraća data)
+                    cameraPhotoUri?.let { result = arrayOf(it) }
+                } else {
+                    result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+                }
+            }
             cb.onReceiveValue(result)
+            cameraPhotoUri = null
         }
     }
 

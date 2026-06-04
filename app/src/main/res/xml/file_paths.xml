@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Privremena slika naredbe koju kamera snimi (app-private cache). -->
+    <cache-path name="camera" path="camera/" />
+</paths>

@@ -957,7 +957,7 @@ async function startItemRecording(sectionId, itemIdx) {
       }
     }, 500);
   } catch (err) {
-    toast("Greška mikrofona: " + err.message, "error");
+    toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
   }
 }
 
@@ -1099,7 +1099,7 @@ async function startGroqRecording(sectionId, target) {
       }
     }, 500);
   } catch (err) {
-    toast("Greška pristupa mikrofonu: " + err.message, "error");
+    toast("Greška pristupa mikrofonu [" + (err.name || "?") + "]: " + err.message, "error");
     console.error(err);
   }
 }
