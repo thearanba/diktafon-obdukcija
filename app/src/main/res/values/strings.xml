@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Diktafon obdukcija</string>
+    <string name="settings_title">Postavke (API ključevi)</string>
+    <string name="menu_reload">Osvježi</string>
+    <string name="first_run_keys">Unesi API ključeve da bi diktiranje i sređivanje radili.</string>
+</resources>

@@ -1,0 +1,61 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.chaquo.python'
+}
+
+android {
+    namespace 'ba.forenzika.diktafon'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ba.forenzika.diktafon'
+        minSdk 29          // Android 10 — pojednostavljuje MediaStore (Downloads bez dozvole)
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+
+        ndk {
+            // S25 Ultra je arm64-v8a; x86_64 je za emulator
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Debug APK se može sideload-ati bez Play Store-a; nije minifikovan
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = '3.11'
+        pip {
+            // python-docx povlači lxml (Chaquopy ima prebuilt wheel) + typing_extensions.
+            // certifi = CA bundle za HTTPS (Android nema Python-friendly sistemski CA store).
+            // Sve ostalo (HTTP klijenti) je stdlib — bez native rizika.
+            install 'python-docx'
+            install 'certifi'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

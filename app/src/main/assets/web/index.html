@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1e293b">
+<title>Diktafon obdukcija</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="title">Diktafon obdukcija</div>
+    <div class="draft-indicator">
+      <span id="save-status-dot" title="Status auto-save"></span>
+      <span id="draft-name-indicator" class="dim">(nema drafta)</span>
+    </div>
+  </div>
+  <div class="status" id="status-badge">učitavanje...</div>
+</header>
+
+<main id="app">
+  <!-- Action bar — gore (sigurno od slučajnog klika palcem dolje) -->
+  <div class="actions">
+    <button id="btn-generate" class="btn-primary">📄 <span class="btn-label">Generiši (.docx)</span></button>
+    <button id="btn-drafts" class="btn-secondary" title="Drafti"><span class="btn-icon">📂</span><span class="btn-label"> Drafti</span></button>
+    <button id="btn-new-draft" class="btn-secondary" title="Novi draft"><span class="btn-icon">🆕</span><span class="btn-label"> Novi</span></button>
+    <button id="btn-clear" class="btn-danger" title="Resetuj"><span class="btn-icon">🗑</span><span class="btn-label"> Reset</span></button>
+  </div>
+
+  <!-- Sekcija: Zaglavlje -->
+  <section class="card collapsible" id="header-card">
+    <button class="card-header" data-toggle>
+      <span class="caret">▸</span>
+      <span class="card-title">Zaglavlje predmeta</span>
+      <span class="card-meta" id="header-summary"></span>
+    </button>
+    <div class="card-body" id="header-body"></div>
+  </section>
+
+  <!-- Sekcije diktiranja -->
+  <div id="sections-container"></div>
+
+  <div id="toast" class="toast hidden"></div>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

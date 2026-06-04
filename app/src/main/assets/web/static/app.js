@@ -1,0 +1,1721 @@
+// === Diktafon obdukcija — frontend ===
+
+const STATE = {
+  config: null,
+  header: {},
+  sections: {},          // section_id -> { raw, final }
+  recording: null,       // {section_id, target ('raw'|'final'), mediaRecorder, chunks}
+  webSpeechRecog: null,
+  currentDraftId: null,
+  lastKnownServerTs: 0,
+  // Pamti original Whisper output po (section_id, item_idx) — za auto-učenje korekcija
+  // Key format: "single:s5_mozak:raw" ili "item:s3_povrede:0:raw"
+  whisperOriginals: {},
+};
+
+// Helper: vrati definiciju sekcije iz config-a
+function getSectionDef(sid) {
+  return STATE.config && STATE.config.sections.find(s => s.id === sid);
+}
+
+// Helper: ensure section state object postoji u pravom formatu
+// Single section: { raw: "", final: "" }
+// Multi section:  { items: [{ raw: "", final: "" }, ...] }
+function getSection(sid) {
+  const def = getSectionDef(sid);
+  const isMulti = def && def.multi;
+  if (!STATE.sections[sid]) {
+    STATE.sections[sid] = isMulti
+      ? { items: [{ raw: "", final: "" }] }
+      : { raw: "", final: "" };
+  }
+  // Pretvori između formata ako je promijenjen
+  if (isMulti && !Array.isArray(STATE.sections[sid].items)) {
+    const old = STATE.sections[sid];
+    const text = (old.final || old.raw || "").trim();
+    STATE.sections[sid] = {
+      items: text
+        ? text.split(/\n+/).filter(Boolean).map(t => ({ raw: "", final: t }))
+        : [{ raw: "", final: "" }],
+    };
+  }
+  if (!isMulti && Array.isArray(STATE.sections[sid].items)) {
+    const items = STATE.sections[sid].items;
+    STATE.sections[sid] = {
+      raw: items.map(it => it.raw).filter(Boolean).join("\n"),
+      final: items.map(it => it.final).filter(Boolean).join("\n"),
+    };
+  }
+  return STATE.sections[sid];
+}
+
+// Backward compat — stari format mogao biti string ili {raw, final} čak i za multi
+function migrateSectionState() {
+  for (const sid in STATE.sections) {
+    const v = STATE.sections[sid];
+    if (typeof v === "string") {
+      STATE.sections[sid] = { raw: "", final: v };
+    }
+  }
+  // getSection će se dalje pobrinuti za single ↔ multi konverziju
+}
+
+// Multi-helpers
+function addItem(sid) {
+  const sec = getSection(sid);
+  if (!sec.items) return;
+  sec.items.push({ raw: "", final: "" });
+  autoSave();
+}
+function removeItem(sid, idx) {
+  const sec = getSection(sid);
+  if (!sec.items || sec.items.length === 0) return;
+  sec.items.splice(idx, 1);
+  if (sec.items.length === 0) sec.items.push({ raw: "", final: "" });
+  autoSave();
+}
+function getItem(sid, idx) {
+  const sec = getSection(sid);
+  if (!sec.items || idx < 0 || idx >= sec.items.length) return null;
+  return sec.items[idx];
+}
+
+// Multi-draft storage
+const STORAGE_INDEX_KEY = "diktafon_drafts_index_v2";
+const STORAGE_DRAFT_PREFIX = "diktafon_draft_v2_";
+const STORAGE_CURRENT_KEY = "diktafon_current_draft_v2";
+
+// Legacy keys (za migraciju)
+const LEGACY_DRAFT_KEY = "diktafon_obdukcija_draft_v1";
+const LEGACY_AUTOSAVE_KEY = "diktafon_obdukcija_autosave_v1";
+
+// === Draft storage layer ===
+// Strategija: server je primarni izvor istine, localStorage je offline cache.
+// - listDrafts() vraća iz cache-a (sinhrono); refreshDraftsFromServer() ažurira cache async
+// - persistDraft() radi paralelno: localStorage cache + PUT na server
+// - loadDraftById() pokušaj servera prvo, fallback na cache
+// - sve UI funkcije koje su sinhrone (renderiraju iz cache-a) i dalje rade kao prije
+
+const SERVER_DRAFTS_AVAILABLE = true;  // Postavi false ako server endpointi padnu
+
+function listDrafts() {
+  // Vraća cache iz localStorage (sinhrono za UI)
+  try {
+    const raw = localStorage.getItem(STORAGE_INDEX_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)) : [];
+  } catch { return []; }
+}
+
+function saveDraftsIndex(list) {
+  localStorage.setItem(STORAGE_INDEX_KEY, JSON.stringify(list));
+}
+
+async function refreshDraftsFromServer() {
+  // Povuci sa servera, ažuriraj localStorage cache
+  try {
+    const serverList = await api("/api/drafts");
+    if (!Array.isArray(serverList)) return null;
+    const localList = listDrafts();
+    // Spoji: ako lokalni nema neki server draft, dodaj
+    // Ako server ima noviju verziju, ažuriraj entry u indexu (ali sadržaj se učita on-demand)
+    const merged = [];
+    const serverIds = new Set();
+    for (const sd of serverList) {
+      serverIds.add(sd.id);
+      merged.push({ id: sd.id, name: sd.name, updatedAt: sd.updatedAt, syncedAt: sd.updatedAt });
+    }
+    // Drafti koji su SAMO u localStorage (još uplodovani na server) — zadrži ih
+    for (const ld of localList) {
+      if (!serverIds.has(ld.id)) {
+        merged.push({ ...ld, localOnly: true });
+      }
+    }
+    saveDraftsIndex(merged);
+    return merged;
+  } catch (err) {
+    console.warn("refreshDraftsFromServer:", err.message);
+    return null;
+  }
+}
+
+function getCurrentDraftId() {
+  return localStorage.getItem(STORAGE_CURRENT_KEY) || null;
+}
+
+function setCurrentDraftId(id) {
+  if (id) localStorage.setItem(STORAGE_CURRENT_KEY, id);
+  else localStorage.removeItem(STORAGE_CURRENT_KEY);
+}
+
+function generateDraftId() {
+  return "d_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+function autoDraftName(header) {
+  // Konvencija foldera predmeta: "Ime Prezime - T09 0 KTA broj"
+  // (isti format kao folder u OneDrive/Sudska medicina/Vještačenja/...)
+  const ime = (header.ime_prezime || "").trim();
+  const kt = (header.kt_broj || "").trim();
+  // KT broj polje u UI nema prefix u value (prefix je samo vizuelan u input field-u),
+  // pa ga ovdje dodajemo
+  const ktFull = kt
+    ? (kt.toUpperCase().startsWith("T") ? kt : `T09 0 KTA ${kt}`)
+    : "";
+  if (ime && ktFull) return `${ime} - ${ktFull}`;
+  if (ime) return ime;
+  if (ktFull) return ktFull;
+  const d = new Date();
+  return `Draft ${d.toLocaleDateString("bs-BA")} ${d.toTimeString().slice(0, 5)}`;
+}
+
+function loadDraftLocal(id) {
+  try {
+    const raw = localStorage.getItem(STORAGE_DRAFT_PREFIX + id);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+async function loadDraftById(id) {
+  // Pokušaj server prvi, fallback na localStorage
+  try {
+    const data = await api(`/api/drafts/${encodeURIComponent(id)}`);
+    if (data && data.id) {
+      // Ažuriraj cache
+      localStorage.setItem(STORAGE_DRAFT_PREFIX + id, JSON.stringify(data));
+      return data;
+    }
+  } catch (err) {
+    console.warn("loadDraftById server fail, fallback na localStorage:", err.message);
+  }
+  return loadDraftLocal(id);
+}
+
+function persistDraft(id, name, header, sections) {
+  const data = { id, name, header, sections, updatedAt: Date.now() };
+  // Lokalni cache (uvijek)
+  localStorage.setItem(STORAGE_DRAFT_PREFIX + id, JSON.stringify(data));
+  // Ažuriraj index
+  const idx = listDrafts();
+  const existing = idx.find(d => d.id === id);
+  if (existing) {
+    existing.name = name;
+    existing.updatedAt = data.updatedAt;
+    delete existing.localOnly;
+  } else {
+    idx.push({ id, name, updatedAt: data.updatedAt });
+  }
+  saveDraftsIndex(idx);
+  // Server upload (async, fire-and-forget — ne blokira UI)
+  if (SERVER_DRAFTS_AVAILABLE) {
+    pushDraftToServer(id, data).catch(err => {
+      console.warn("Upload na server pao:", err.message);
+      // Ostani local-only — pokušaj ponovo kasnije
+      const idx2 = listDrafts();
+      const e = idx2.find(d => d.id === id);
+      if (e) { e.localOnly = true; saveDraftsIndex(idx2); }
+    });
+  }
+}
+
+async function pushDraftToServer(id, data) {
+  return api(`/api/drafts/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: data.name,
+      header: data.header,
+      sections: data.sections,
+      updatedAt: data.updatedAt,
+    }),
+  });
+}
+
+function deleteDraft(id) {
+  localStorage.removeItem(STORAGE_DRAFT_PREFIX + id);
+  saveDraftsIndex(listDrafts().filter(d => d.id !== id));
+  if (getCurrentDraftId() === id) setCurrentDraftId(null);
+  // Brisanje na serveru (async)
+  if (SERVER_DRAFTS_AVAILABLE) {
+    api(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" })
+      .catch(err => console.warn("Brisanje na serveru palo:", err.message));
+  }
+}
+
+function createNewDraft(name) {
+  const id = generateDraftId();
+  const now = Date.now();
+  persistDraft(id, name || autoDraftName({}), {}, {});
+  setCurrentDraftId(id);
+  return id;
+}
+
+const LEGACY_MIGRATION_FLAG = "diktafon_legacy_migrated_v2";
+
+function migrateLegacyDraft() {
+  // Izvrši migraciju samo JEDNOM (flag u localStorage), pa očisti legacy ključeve
+  // da se ne ponove pri svakom otvaranju stranice
+  if (localStorage.getItem(LEGACY_MIGRATION_FLAG) === "done") return;
+
+  for (const key of [LEGACY_AUTOSAVE_KEY, LEGACY_DRAFT_KEY]) {
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const data = JSON.parse(raw);
+      if (data && (data.header || data.sections)) {
+        const id = generateDraftId();
+        const name = autoDraftName(data.header || {}) + " (importovan)";
+        persistDraft(id, name, data.header || {}, data.sections || {});
+        if (key === LEGACY_AUTOSAVE_KEY) setCurrentDraftId(id);
+        console.log("Migracija: importovan legacy draft kao", name);
+      }
+    } catch {}
+    // Obriši legacy ključ da se ne migrira ponovo
+    localStorage.removeItem(key);
+  }
+  // Postavi flag da migracija ne ponavlja
+  localStorage.setItem(LEGACY_MIGRATION_FLAG, "done");
+}
+
+// === API helpers (Android: bez servera — sve ide kroz native most na Python) ===
+async function api(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const { endpoint, payload } = await mapPathToCall(path, method, options.body);
+  const res = await nativeCall(endpoint, payload);
+  if (res && res.__error) {
+    throw new Error(`${res.status}: ${res.detail}`);
+  }
+  return res;
+}
+
+// Mapira stari fetch path/method/body na (endpoint, payload) za Python dispatch.
+async function mapPathToCall(path, method, body) {
+  // /api/drafts/{id}
+  const draftMatch = path.match(/^\/api\/drafts\/(.+)$/);
+  if (draftMatch) {
+    const id = decodeURIComponent(draftMatch[1]);
+    if (method === "GET") return { endpoint: "draft_get", payload: { id } };
+    if (method === "DELETE") return { endpoint: "draft_delete", payload: { id } };
+    if (method === "PUT") {
+      const data = body ? JSON.parse(body) : {};
+      return { endpoint: "draft_put", payload: { id, ...data } };
+    }
+  }
+  switch (path) {
+    case "/api/config":
+      return { endpoint: "config", payload: {} };
+    case "/api/drafts":
+      return { endpoint: "drafts_list", payload: {} };
+    case "/api/corrections":
+      return { endpoint: "corrections_list", payload: {} };
+    case "/api/corrections/manage":
+      return { endpoint: "corrections_manage", payload: JSON.parse(body || "{}") };
+    case "/api/cleanup":
+      return { endpoint: "cleanup", payload: JSON.parse(body || "{}") };
+    case "/api/merge":
+      return { endpoint: "merge", payload: JSON.parse(body || "{}") };
+    case "/api/log_correction":
+      return { endpoint: "log_correction", payload: JSON.parse(body || "{}") };
+    case "/api/transcribe": {
+      // body je FormData: "audio" (blob) + "section_id"
+      const audio = body.get("audio");
+      const section_id = body.get("section_id") || "";
+      const audio_b64 = await blobToBase64(audio);
+      const content_type = (audio && audio.type) || "audio/webm";
+      return { endpoint: "transcribe", payload: { audio_b64, content_type, section_id } };
+    }
+    case "/api/extract_naredba": {
+      // body je FormData: "file"
+      const file = body.get("file");
+      const file_b64 = await blobToBase64(file);
+      return {
+        endpoint: "extract_naredba",
+        payload: {
+          file_b64,
+          content_type: (file && file.type) || "",
+          filename: (file && file.name) || "",
+        },
+      };
+    }
+  }
+  throw new Error("Nepoznata ruta za most: " + method + " " + path);
+}
+
+// === Native most: JS → Kotlin → Python (asinhrono preko __nativeResolve callback-a) ===
+window.__nativePending = window.__nativePending || {};
+window.__nativeSeq = window.__nativeSeq || 0;
+window.__nativeResolve = function (reqId, b64) {
+  const p = window.__nativePending[reqId];
+  if (!p) return;
+  delete window.__nativePending[reqId];
+  try {
+    // b64 (UTF-8 JSON) → string
+    const json = decodeURIComponent(escape(atob(b64)));
+    p.resolve(JSON.parse(json));
+  } catch (e) {
+    p.reject(e);
+  }
+};
+function nativeCall(endpoint, payload) {
+  return new Promise((resolve, reject) => {
+    if (!window.AndroidBridge || typeof window.AndroidBridge.call !== "function") {
+      reject(new Error("Native most nije dostupan (AndroidBridge)."));
+      return;
+    }
+    const reqId = "r" + (++window.__nativeSeq) + "_" + Math.floor(performance.now());
+    window.__nativePending[reqId] = { resolve, reject };
+    try {
+      window.AndroidBridge.call(reqId, endpoint, JSON.stringify(payload || {}));
+    } catch (e) {
+      delete window.__nativePending[reqId];
+      reject(e);
+    }
+  });
+}
+
+// Blob/File → base64 (bez data: prefiksa)
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result || "";
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// === UI helpers ===
+function $(sel) { return document.querySelector(sel); }
+function $$(sel) { return Array.from(document.querySelectorAll(sel)); }
+
+let toastTimer = null;
+function toast(msg, type = "info") {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast";
+  if (type === "error") t.classList.add("error");
+  if (type === "success") t.classList.add("success");
+  t.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
+}
+
+function setStatus(text, level = "") {
+  const b = $("#status-badge");
+  b.textContent = text;
+  b.className = "status " + level;
+}
+
+// === Render: header form ===
+function renderHeaderForm() {
+  const body = $("#header-body");
+  body.innerHTML = "";
+
+  // Auto-popuni dugme — uvuci podatke iz naredbe (PDF/foto)
+  const extractDiv = document.createElement("div");
+  extractDiv.className = "extract-naredba-box";
+  extractDiv.innerHTML = `
+    <button class="btn-extract-naredba" id="btn-extract-naredba">
+      📋 Auto-popuni iz naredbe (PDF / foto)
+    </button>
+    <div class="extract-hint">Claude će pročitati naredbu i popuniti polja</div>
+    <input type="file" id="file-naredba" accept="image/*,application/pdf"
+           capture="environment" style="display:none">
+  `;
+  body.appendChild(extractDiv);
+
+  for (const f of STATE.config.header_fields) {
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    const label = document.createElement("label");
+    label.textContent = f.label;
+    wrap.appendChild(label);
+
+    let inputHtml;
+    if (f.multiline) {
+      const val = STATE.header[f.id] !== undefined ? STATE.header[f.id] : (f.default || '');
+      inputHtml = `<textarea data-header-id="${f.id}" placeholder="${escapeAttr(f.placeholder || '')}">${escapeHtml(val)}</textarea>`;
+    } else if (f.prefix) {
+      inputHtml = `
+        <div class="prefix-input">
+          <span>${escapeHtml(f.prefix)}</span>
+          <input type="text" data-header-id="${f.id}" placeholder="${escapeAttr(f.placeholder || '')}" value="${escapeAttr(STATE.header[f.id] || '')}">
+        </div>`;
+    } else {
+      const val = STATE.header[f.id] !== undefined ? STATE.header[f.id] : (f.default || '');
+      inputHtml = `<input type="text" data-header-id="${f.id}" placeholder="${escapeAttr(f.placeholder || '')}" value="${escapeAttr(val)}">`;
+    }
+    const div = document.createElement("div");
+    div.innerHTML = inputHtml;
+    wrap.appendChild(div.firstElementChild);
+
+    // Quick action dugmad ispod polja (today, quick_options)
+    if (f.today_button || (f.quick_options && f.quick_options.length)) {
+      const quickWrap = document.createElement("div");
+      quickWrap.className = "field-quick-actions";
+      if (f.today_button) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-quick";
+        btn.textContent = "📅 Danas";
+        btn.dataset.fillField = f.id;
+        btn.dataset.fillValue = formatDateToday();
+        quickWrap.appendChild(btn);
+      }
+      if (f.quick_options) {
+        for (const opt of f.quick_options) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn-quick";
+          btn.textContent = opt;
+          btn.dataset.fillField = f.id;
+          btn.dataset.fillValue = opt;
+          quickWrap.appendChild(btn);
+        }
+      }
+      wrap.appendChild(quickWrap);
+    }
+    body.appendChild(wrap);
+  }
+
+  // Bind input events
+  body.querySelectorAll("[data-header-id]").forEach(el => {
+    el.addEventListener("input", e => {
+      STATE.header[e.target.dataset.headerId] = e.target.value;
+      updateHeaderSummary();
+      autoSave();
+    });
+  });
+
+  // Quick fill dugmad (Danas, predefinisani pomoćnici, ...)
+  body.querySelectorAll("[data-fill-field]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      const fid = btn.dataset.fillField;
+      const value = btn.dataset.fillValue;
+      STATE.header[fid] = value;
+      const inp = body.querySelector(`[data-header-id="${fid}"]`);
+      if (inp) inp.value = value;
+      updateHeaderSummary();
+      autoSave();
+    });
+  });
+
+  // Extract naredba — dugme i file input
+  const btnExtract = $("#btn-extract-naredba");
+  const fileInput = $("#file-naredba");
+  if (btnExtract && fileInput) {
+    btnExtract.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      await extractNaredba(file, btnExtract);
+      e.target.value = "";  // reset za sljedeći upload
+    });
+  }
+
+  updateHeaderSummary();
+}
+
+async function extractNaredba(file, btn) {
+  if (!STATE.config.claude_available) {
+    toast("Claude API nije konfigurisan", "error");
+    return;
+  }
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "⏳ Šaljem Claude-u...";
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await api("/api/extract_naredba", { method: "POST", body: fd });
+    const data = res.data || {};
+    let count = 0;
+    for (const key in data) {
+      if (data[key] !== undefined && data[key] !== "") {
+        STATE.header[key] = data[key];
+        count++;
+      }
+    }
+    renderHeaderForm();  // re-render sa novim vrijednostima
+    autoSave();
+    toast(`Popunjeno ${count} polja iz naredbe ✓ (${res.tokens_in}+${res.tokens_out} tokens)`, "success");
+  } catch (err) {
+    toast("Greška: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+}
+
+function updateHeaderSummary() {
+  const ime = STATE.header.ime_prezime || "";
+  const kt = STATE.header.kt_broj || "";
+  const parts = [];
+  if (ime) parts.push(ime);
+  if (kt) parts.push(`KT ${kt}`);
+  $("#header-summary").textContent = parts.join(" · ");
+  // Pri promjeni headera, ažuriraj i naziv drafta u topbar-u
+  updateDraftIndicator();
+}
+
+// === Render: dictation sections (Opcija B - kratka diktacija + Claude merge) ===
+function renderSections() {
+  const container = $("#sections-container");
+  container.innerHTML = "";
+  for (const s of STATE.config.sections) {
+    const card = document.createElement("section");
+    card.className = "card collapsible";
+    card.dataset.sectionId = s.id;
+
+    const headerHtml = `
+      <button class="card-header" data-toggle>
+        <span class="caret">▸</span>
+        <span class="section-status"></span>
+        <span class="card-title">${escapeHtml(s.title)}</span>
+      </button>
+    `;
+    if (s.multi) {
+      card.innerHTML = headerHtml + renderMultiBody(s);
+    } else {
+      card.innerHTML = headerHtml + renderSingleBody(s);
+    }
+    container.appendChild(card);
+    updateSectionStatus(s.id);
+  }
+  bindSectionEvents();
+}
+
+function renderSingleBody(s) {
+  const sec = getSection(s.id);
+  const templateText = s.template_text || s.default || "";
+  // Placeholder = template tekst (skraćen ako je predug) — daje korisniku uvid šta sve sadrži ovaj dio
+  const placeholderText = templateText
+    ? templateText.length > 280 ? templateText.slice(0, 280) + "..." : templateText
+    : (s.hint || "Diktiraj samo razlike od template-a, kratko.");
+
+  return `
+    <div class="card-body">
+      ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
+      ${templateText ? `
+        <button class="dict-default-toggle" data-show-default>📋 Prikaži pun template paragraf</button>
+        <div class="dict-default" data-default-text style="display:none;">${escapeHtml(templateText)}</div>
+      ` : ''}
+
+      <label class="field-label">Sirova diktacija (kratko, neformalno):</label>
+      <textarea class="dict-textarea raw" data-section-id="${s.id}" data-target="raw"
+        placeholder="${escapeAttr(placeholderText)}">${escapeHtml(sec.raw || '')}</textarea>
+      <div class="dict-controls">
+        <button class="btn-mic" data-mic="${s.id}" data-target="raw">
+          🎤 <span class="mic-label">Diktiraj</span>
+        </button>
+        <button class="btn-merge" data-merge="${s.id}">🪄 Spoji</button>
+        <button class="btn-clear-section" data-clear-raw="${s.id}">✕ Obriši</button>
+      </div>
+
+      <label class="field-label" style="margin-top:14px;">Finalni tekst (ide u zapisnik):</label>
+      <textarea class="dict-textarea final" data-section-id="${s.id}" data-target="final"
+        placeholder="Ovdje će se pojaviti spojen tekst nakon klika na 🪄 Spoji.">${escapeHtml(sec.final || '')}</textarea>
+      <div class="dict-controls">
+        <button class="btn-cleanup" data-cleanup="${s.id}">✨ Doradi</button>
+        ${templateText ? `<button class="btn-use-default" data-use-default="${s.id}">↺ Vrati template</button>` : ''}
+        <button class="btn-clear-section" data-clear-final="${s.id}">✕ Obriši finalni</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderMultiBody(s) {
+  const sec = getSection(s.id);
+  const items = sec.items || [{ raw: "", final: "" }];
+  const itemsHtml = items.map((item, idx) => renderItem(s, idx, item)).join("");
+  const itemNoun = s.id === "s11_kostur" ? "prelom" :
+                   s.id === "misljenje" ? "tačku mišljenja" :
+                   s.id === "dodatne" ? "stavku" : "povredu";
+  return `
+    <div class="card-body">
+      ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
+      <div class="items-container" data-items-for="${s.id}">${itemsHtml}</div>
+      <button class="btn-add-item" data-add-item="${s.id}">+ Dodaj ${itemNoun}</button>
+    </div>
+  `;
+}
+
+function renderItem(s, idx, item) {
+  const itemNoun = s.id === "s11_kostur" ? "Prelom" :
+                   s.id === "misljenje" ? "Tačka" :
+                   s.id === "dodatne" ? "Stavka" : "Povreda";
+  const placeholderRaw = s.id === "s3_povrede"
+    ? "Npr: oguljotina obraza 2x1 tamnocrvena"
+    : s.id === "s11_kostur"
+    ? "Npr: prelom desne nadlaktice"
+    : s.id === "misljenje"
+    ? "Npr: smrt nasilna utapanjem"
+    : "Diktiraj jednu stavku...";
+
+  return `
+    <div class="item-card" data-item-idx="${idx}" data-item-section="${s.id}">
+      <div class="item-header">
+        <span class="item-num">${itemNoun} #${idx + 1}</span>
+        <button class="btn-item-remove" data-remove-item="${s.id}" data-remove-idx="${idx}"
+          title="Obriši stavku">✕</button>
+      </div>
+      <textarea class="dict-textarea raw item-raw" data-item-target="raw"
+        data-item-section="${s.id}" data-item-idx="${idx}"
+        placeholder="${escapeAttr(placeholderRaw)}">${escapeHtml(item.raw || '')}</textarea>
+      <div class="dict-controls">
+        <button class="btn-mic" data-item-mic="${s.id}" data-item-idx="${idx}">
+          🎤 <span class="mic-label">Diktiraj</span>
+        </button>
+        <button class="btn-merge" data-item-merge="${s.id}" data-item-idx="${idx}">🪄 Spoji</button>
+      </div>
+      <textarea class="dict-textarea final item-final" data-item-target="final"
+        data-item-section="${s.id}" data-item-idx="${idx}"
+        placeholder="Spojen tekst stavke se pojavi ovdje.">${escapeHtml(item.final || '')}</textarea>
+    </div>
+  `;
+}
+
+function bindSectionEvents() {
+  const container = $("#sections-container");
+
+  // Single section events
+  container.querySelectorAll("[data-show-default]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      const def = e.target.parentElement.querySelector("[data-default-text]");
+      const visible = def.style.display !== "none";
+      def.style.display = visible ? "none" : "block";
+      e.target.textContent = visible
+        ? "📋 Prikaži pun template paragraf"
+        : "📋 Sakrij template paragraf";
+    });
+  });
+
+  // Single textareas
+  container.querySelectorAll(".dict-textarea[data-target]").forEach(ta => {
+    ta.addEventListener("input", e => {
+      const sid = e.target.dataset.sectionId;
+      const target = e.target.dataset.target;
+      const sec = getSection(sid);
+      sec[target] = e.target.value;
+      updateSectionStatus(sid);
+      autoSave();
+    });
+  });
+
+  // Multi item textareas
+  container.querySelectorAll(".dict-textarea[data-item-target]").forEach(ta => {
+    ta.addEventListener("input", e => {
+      const sid = e.target.dataset.itemSection;
+      const idx = parseInt(e.target.dataset.itemIdx, 10);
+      const target = e.target.dataset.itemTarget;
+      const item = getItem(sid, idx);
+      if (item) {
+        item[target] = e.target.value;
+        updateSectionStatus(sid);
+        autoSave();
+      }
+    });
+  });
+
+  container.querySelectorAll("[data-mic]").forEach(btn => {
+    btn.addEventListener("click", () => toggleRecording(btn.dataset.mic, btn.dataset.target || "raw"));
+  });
+  container.querySelectorAll("[data-item-mic]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.itemMic;
+      const idx = parseInt(btn.dataset.itemIdx, 10);
+      toggleItemRecording(sid, idx);
+    });
+  });
+
+  container.querySelectorAll("[data-merge]").forEach(btn => {
+    btn.addEventListener("click", () => mergeSection(btn.dataset.merge));
+  });
+  container.querySelectorAll("[data-item-merge]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.itemMerge;
+      const idx = parseInt(btn.dataset.itemIdx, 10);
+      mergeItem(sid, idx);
+    });
+  });
+
+  container.querySelectorAll("[data-cleanup]").forEach(btn => {
+    btn.addEventListener("click", () => cleanupSection(btn.dataset.cleanup));
+  });
+
+  container.querySelectorAll("[data-use-default]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.useDefault;
+      const s = getSectionDef(sid);
+      const tpl = s ? (s.template_text || s.default || "") : "";
+      if (!tpl) return;
+      if (confirm("Zameniti finalni tekst sa template paragrafom?")) {
+        const sec = getSection(sid);
+        sec.final = tpl;
+        const ta = document.querySelector(`textarea[data-section-id="${sid}"][data-target="final"]`);
+        if (ta) ta.value = tpl;
+        updateSectionStatus(sid);
+        autoSave();
+      }
+    });
+  });
+
+  container.querySelectorAll("[data-clear-raw]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.clearRaw;
+      if (confirm("Obrisati sirovu diktaciju?")) {
+        getSection(sid).raw = "";
+        const ta = document.querySelector(`textarea[data-section-id="${sid}"][data-target="raw"]`);
+        if (ta) ta.value = "";
+        updateSectionStatus(sid);
+        autoSave();
+      }
+    });
+  });
+  container.querySelectorAll("[data-clear-final]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.clearFinal;
+      if (confirm("Obrisati finalni tekst?")) {
+        getSection(sid).final = "";
+        const ta = document.querySelector(`textarea[data-section-id="${sid}"][data-target="final"]`);
+        if (ta) ta.value = "";
+        updateSectionStatus(sid);
+        autoSave();
+      }
+    });
+  });
+
+  // Add / remove items
+  container.querySelectorAll("[data-add-item]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.addItem;
+      addItem(sid);
+      rerenderMultiBody(sid);
+      // Skroluj na novi item i fokusiraj
+      setTimeout(() => {
+        const sec = getSection(sid);
+        const lastIdx = sec.items.length - 1;
+        const ta = document.querySelector(
+          `textarea[data-item-section="${sid}"][data-item-idx="${lastIdx}"][data-item-target="raw"]`
+        );
+        if (ta) {
+          ta.scrollIntoView({ behavior: "smooth", block: "center" });
+          ta.focus();
+        }
+      }, 50);
+    });
+  });
+  container.querySelectorAll("[data-remove-item]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.removeItem;
+      const idx = parseInt(btn.dataset.removeIdx, 10);
+      const item = getItem(sid, idx);
+      const hasContent = item && (item.raw || item.final).trim().length > 0;
+      if (hasContent && !confirm("Obrisati ovu stavku?")) return;
+      removeItem(sid, idx);
+      rerenderMultiBody(sid);
+    });
+  });
+}
+
+function rerenderMultiBody(sid) {
+  const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
+  if (!card) return;
+  const isOpen = card.classList.contains("open");
+  const def = getSectionDef(sid);
+  const headerHtml = card.querySelector(".card-header").outerHTML;
+  card.innerHTML = headerHtml + renderMultiBody(def);
+  if (isOpen) card.classList.add("open");
+  bindSectionEvents();
+  updateSectionStatus(sid);
+}
+
+function updateSectionStatus(sectionId) {
+  const card = document.querySelector(`section.card[data-section-id="${sectionId}"]`);
+  if (!card) return;
+  const dot = card.querySelector(".section-status");
+  if (!dot) return;
+  const def = getSectionDef(sectionId);
+  const sec = getSection(sectionId);
+  let hasRaw = false, hasFinal = false;
+  if (def && def.multi && sec.items) {
+    hasRaw = sec.items.some(it => (it.raw || "").trim());
+    hasFinal = sec.items.some(it => (it.final || "").trim());
+  } else {
+    hasRaw = (sec.raw || "").trim().length > 0;
+    hasFinal = (sec.final || "").trim().length > 0;
+  }
+  dot.classList.toggle("dictated", hasRaw && !hasFinal);
+  dot.classList.toggle("cleaned", hasFinal);
+}
+
+// === Merge (Opcija B) ===
+async function mergeSection(sectionId) {
+  if (!STATE.config.claude_available) {
+    toast("Claude API nije konfigurisan u .env fajlu", "error");
+    return;
+  }
+  const sec = getSection(sectionId);
+  if (!sec.raw.trim()) {
+    toast("Nema sirove diktacije za spajanje");
+    return;
+  }
+  const sectionDef = STATE.config.sections.find(s => s.id === sectionId);
+  if (!sectionDef) return;
+
+  // Loguj korekciju ako je korisnik editovao Whisper output prije Spoji
+  maybeLogCorrection(`single:${sectionId}:raw`, sec.raw);
+
+  const btn = document.querySelector(`[data-merge="${sectionId}"]`);
+  const oldLabel = btn.textContent;
+  btn.textContent = "⏳ Spajam...";
+  btn.disabled = true;
+  try {
+    const res = await api("/api/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        raw_dictation: sec.raw,
+        section_id: sectionId,
+        section_title: sectionDef.title || "",
+        template_text: sectionDef.template_text || sectionDef.default || "",
+        is_multi: !!sectionDef.multi,
+        is_numbered: !!sectionDef.numbered,
+        hint: sectionDef.hint || "",
+      }),
+    });
+    sec.final = res.text;
+    const finalTa = document.querySelector(`textarea[data-section-id="${sectionId}"][data-target="final"]`);
+    if (finalTa) finalTa.value = res.text;
+    updateSectionStatus(sectionId);
+    autoSave();
+    toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out} tokens)`, "success");
+  } catch (err) {
+    toast("Greška: " + err.message, "error");
+  } finally {
+    btn.textContent = oldLabel;
+    btn.disabled = false;
+  }
+}
+
+// === Collapsible cards ===
+document.addEventListener("click", e => {
+  const header = e.target.closest("[data-toggle]");
+  if (!header) return;
+  const card = header.closest(".collapsible");
+  if (card) card.classList.toggle("open");
+});
+
+// === Recording (single section) ===
+async function toggleRecording(sectionId, target = "raw") {
+  if (STATE.recording && STATE.recording.section_id === sectionId
+      && STATE.recording.target === target && STATE.recording.itemIdx == null) {
+    stopRecording();
+    return;
+  }
+  if (STATE.recording) stopRecording();
+  await startRecording(sectionId, target);
+}
+
+// === Recording (multi item) ===
+async function toggleItemRecording(sectionId, itemIdx) {
+  if (STATE.recording && STATE.recording.section_id === sectionId
+      && STATE.recording.itemIdx === itemIdx) {
+    stopRecording();
+    return;
+  }
+  if (STATE.recording) stopRecording();
+  await startItemRecording(sectionId, itemIdx);
+}
+
+async function startItemRecording(sectionId, itemIdx) {
+  const useGroq = STATE.config.stt_options.includes("groq");
+  if (!useGroq) {
+    toast("Web Speech za stavke nije implementiran. Koristi GROQ ključ.", "error");
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      await processGroqItemRecording(sectionId, itemIdx, chunks, mr.mimeType);
+    };
+    mr.start();
+    STATE.recording = { section_id: sectionId, itemIdx, mediaRecorder: mr, chunks, warmingUp: true };
+    updateItemMicState(sectionId, itemIdx, "preparing");
+    setTimeout(() => {
+      if (STATE.recording && STATE.recording.mediaRecorder === mr) {
+        STATE.recording.warmingUp = false;
+        updateItemMicState(sectionId, itemIdx, "recording");
+      }
+    }, 500);
+  } catch (err) {
+    toast("Greška mikrofona: " + err.message, "error");
+  }
+}
+
+async function processGroqItemRecording(sectionId, itemIdx, chunks, mimeType) {
+  updateItemMicState(sectionId, itemIdx, "processing");
+  const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+  const fd = new FormData();
+  fd.append("audio", blob, "audio.webm");
+  fd.append("section_id", sectionId);
+  try {
+    const res = await api("/api/transcribe", { method: "POST", body: fd });
+    // Sačuvaj original Whisper output za potencijalno učenje korekcija
+    const key = `item:${sectionId}:${itemIdx}:raw`;
+    STATE.whisperOriginals[key] = res.raw_whisper || res.text;
+    appendToItem(sectionId, itemIdx, "raw", res.text);
+    toast("Transkripcija ✓", "success");
+  } catch (err) {
+    toast("Transkripcija greška: " + err.message, "error");
+  } finally {
+    STATE.recording = null;
+    updateItemMicState(sectionId, itemIdx, "idle");
+  }
+}
+
+function updateItemMicState(sectionId, itemIdx, state) {
+  const btn = document.querySelector(`[data-item-mic="${sectionId}"][data-item-idx="${itemIdx}"]`);
+  if (!btn) return;
+  btn.classList.remove("recording", "processing", "preparing");
+  const label = btn.querySelector(".mic-label");
+  if (state === "preparing") {
+    btn.classList.add("preparing");
+    if (label) label.textContent = "Pripremam...";
+  } else if (state === "recording") {
+    btn.classList.add("recording");
+    if (label) label.textContent = "Zaustavi";
+  } else if (state === "processing") {
+    btn.classList.add("processing");
+    if (label) label.textContent = "Obrađujem...";
+  } else {
+    if (label) label.textContent = "Diktiraj";
+  }
+}
+
+function appendToItem(sectionId, itemIdx, target, text) {
+  const item = getItem(sectionId, itemIdx);
+  if (!item) return;
+  const current = (item[target] || "").trim();
+  const sep = current ? " " : "";
+  item[target] = current ? current + sep + text : text;
+  const ta = document.querySelector(
+    `textarea[data-item-section="${sectionId}"][data-item-idx="${itemIdx}"][data-item-target="${target}"]`
+  );
+  if (ta) {
+    ta.value = item[target];
+    ta.scrollTop = ta.scrollHeight;
+  }
+  updateSectionStatus(sectionId);
+  autoSave();
+}
+
+// === Merge item ===
+async function mergeItem(sectionId, itemIdx) {
+  if (!STATE.config.claude_available) {
+    toast("Claude API nije konfigurisan", "error");
+    return;
+  }
+  const item = getItem(sectionId, itemIdx);
+  if (!item || !item.raw.trim()) {
+    toast("Nema sirove diktacije za spajanje");
+    return;
+  }
+  const def = getSectionDef(sectionId);
+
+  // Loguj korekciju (ako je korisnik editovao prije Spoji)
+  maybeLogCorrection(`item:${sectionId}:${itemIdx}:raw`, item.raw);
+  const btn = document.querySelector(`[data-item-merge="${sectionId}"][data-item-idx="${itemIdx}"]`);
+  const oldLabel = btn.textContent;
+  btn.textContent = "⏳";
+  btn.disabled = true;
+  try {
+    const res = await api("/api/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        raw_dictation: item.raw,
+        section_id: sectionId,
+        section_title: def.title || "",
+        template_text: def.template_text || def.default || "",
+        is_multi: true,  // Claude tretira kao listu
+        is_numbered: false,  // Numeracija nije po stavki — radi je generator za .docx
+        hint: def.hint || "",
+      }),
+    });
+    item.final = res.text.trim();
+    const finalTa = document.querySelector(
+      `textarea[data-item-section="${sectionId}"][data-item-idx="${itemIdx}"][data-item-target="final"]`
+    );
+    if (finalTa) finalTa.value = item.final;
+    updateSectionStatus(sectionId);
+    autoSave();
+    toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out})`, "success");
+  } catch (err) {
+    toast("Greška: " + err.message, "error");
+  } finally {
+    btn.textContent = oldLabel;
+    btn.disabled = false;
+  }
+}
+
+async function startRecording(sectionId, target) {
+  const useGroq = STATE.config.stt_options.includes("groq");
+
+  if (useGroq) {
+    await startGroqRecording(sectionId, target);
+  } else {
+    startWebSpeechRecording(sectionId, target);
+  }
+}
+
+async function startGroqRecording(sectionId, target) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      await processGroqRecording(sectionId, target, chunks, mr.mimeType);
+    };
+    // Pokreni snimanje ODMAH — tako MediaRecorder uhvati i 500ms warmup tišine
+    mr.start();
+    STATE.recording = { section_id: sectionId, target, mediaRecorder: mr, chunks, warmingUp: true };
+    // UI: "Pripremam..." pa nakon 500ms "Snima"
+    updateMicButtonState(sectionId, "preparing");
+    setTimeout(() => {
+      if (STATE.recording && STATE.recording.mediaRecorder === mr) {
+        STATE.recording.warmingUp = false;
+        updateMicButtonState(sectionId, "recording");
+      }
+    }, 500);
+  } catch (err) {
+    toast("Greška pristupa mikrofonu: " + err.message, "error");
+    console.error(err);
+  }
+}
+
+function pickMimeType() {
+  const types = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  for (const t of types) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return "";
+}
+
+async function processGroqRecording(sectionId, target, chunks, mimeType) {
+  updateMicButtonState(sectionId, "processing");
+  const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+  const fd = new FormData();
+  fd.append("audio", blob, "audio.webm");
+  fd.append("section_id", sectionId);
+  try {
+    const res = await api("/api/transcribe", { method: "POST", body: fd });
+    // Sačuvaj original Whisper output za potencijalno učenje korekcija
+    const key = `single:${sectionId}:${target}`;
+    STATE.whisperOriginals[key] = res.raw_whisper || res.text;
+    appendToSection(sectionId, target, res.text);
+    toast("Transkripcija gotova ✓", "success");
+  } catch (err) {
+    toast("Transkripcija greška: " + err.message, "error");
+    console.error(err);
+  } finally {
+    STATE.recording = null;
+    updateMicButtonState(sectionId, "idle");
+  }
+}
+
+function startWebSpeechRecording(sectionId, target) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    toast("Browser ne podržava Web Speech. Postavi GROQ_API_KEY za bolju opciju.", "error");
+    return;
+  }
+  const rec = new SR();
+  rec.lang = "hr-HR";
+  rec.continuous = true;
+  rec.interimResults = false;
+  rec.onresult = (e) => {
+    let final = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript + " ";
+    }
+    if (final) appendToSection(sectionId, target, final.trim());
+  };
+  rec.onerror = (e) => {
+    toast("Web Speech greška: " + e.error, "error");
+    STATE.recording = null;
+    updateMicButtonState(sectionId, "idle");
+  };
+  rec.onend = () => {
+    if (STATE.recording && STATE.recording.section_id === sectionId) {
+      STATE.recording = null;
+      updateMicButtonState(sectionId, "idle");
+    }
+  };
+  rec.start();
+  STATE.recording = { section_id: sectionId, target, webSpeech: rec };
+  updateMicButtonState(sectionId, "recording");
+}
+
+function stopRecording() {
+  if (!STATE.recording) return;
+  if (STATE.recording.mediaRecorder) {
+    STATE.recording.mediaRecorder.stop();
+  } else if (STATE.recording.webSpeech) {
+    STATE.recording.webSpeech.stop();
+  }
+}
+
+function updateMicButtonState(sectionId, state) {
+  const btn = document.querySelector(`[data-mic="${sectionId}"]`);
+  if (!btn) return;
+  btn.classList.remove("recording", "processing", "preparing");
+  const label = btn.querySelector(".mic-label");
+  if (state === "preparing") {
+    btn.classList.add("preparing");
+    if (label) label.textContent = "Pripremam...";
+  } else if (state === "recording") {
+    btn.classList.add("recording");
+    if (label) label.textContent = "Zaustavi";
+  } else if (state === "processing") {
+    btn.classList.add("processing");
+    if (label) label.textContent = "Obrađujem...";
+  } else {
+    if (label) label.textContent = "Diktiraj";
+  }
+}
+
+function appendToSection(sectionId, target, text) {
+  const ta = document.querySelector(`textarea[data-section-id="${sectionId}"][data-target="${target}"]`);
+  if (!ta) return;
+  const current = ta.value.trim();
+  const sep = current ? (current.endsWith(".") || current.endsWith("\n") ? " " : " ") : "";
+  ta.value = current ? current + sep + text : text;
+  const sec = getSection(sectionId);
+  sec[target] = ta.value;
+  updateSectionStatus(sectionId);
+  autoSave();
+  ta.scrollTop = ta.scrollHeight;
+}
+
+// === Whisper correction logging (auto-učenje iz korisnikovih ispravki) ===
+async function maybeLogCorrection(key, currentText) {
+  const original = STATE.whisperOriginals[key];
+  if (!original) return;  // nema sačuvanog originala
+  const edited = (currentText || "").trim();
+  if (!edited || edited === original.trim()) return;  // nema promjene
+  try {
+    const res = await api("/api/log_correction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ original, edited }),
+    });
+    if (res.learned && res.learned.length > 0) {
+      // Server je naučio nove korekcije!
+      const msg = res.learned.map(l => `"${l.before}" → "${l.after}"`).join(", ");
+      toast(`✓ Naučena nova korekcija: ${msg}`, "success");
+    }
+  } catch (err) {
+    console.warn("log_correction:", err.message);
+  }
+  // Obriši cached original — više se ne odnosi na trenutni sadržaj
+  delete STATE.whisperOriginals[key];
+}
+
+// === Cleanup (radi nad finalnim tekstom — dodatna polish nakon merge-a) ===
+async function cleanupSection(sectionId) {
+  if (!STATE.config.claude_available) {
+    toast("Claude API nije konfigurisan u .env fajlu", "error");
+    return;
+  }
+  const ta = document.querySelector(`textarea[data-section-id="${sectionId}"][data-target="final"]`);
+  if (!ta || !ta.value.trim()) {
+    toast("Nema finalnog teksta za doradu (prvo Spoji)");
+    return;
+  }
+  const sec = STATE.config.sections.find(s => s.id === sectionId);
+  const btn = document.querySelector(`[data-cleanup="${sectionId}"]`);
+  const oldLabel = btn.textContent;
+  btn.textContent = "⏳ Doradjujem...";
+  btn.disabled = true;
+  try {
+    const res = await api("/api/cleanup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: ta.value,
+        section_id: sectionId,
+        section_title: sec ? sec.title : "",
+      }),
+    });
+    ta.value = res.text;
+    getSection(sectionId).final = res.text;
+    autoSave();
+    toast("Dorađeno ✓", "success");
+  } catch (err) {
+    toast("Greška: " + err.message, "error");
+  } finally {
+    btn.textContent = oldLabel;
+    btn.disabled = false;
+  }
+}
+
+// === Generate ===
+async function generateReport() {
+  // Provjeri da li su ime i KT broj popunjeni — bez njih filename će biti "Zapisnik.docx"
+  const ime = (STATE.header.ime_prezime || "").trim();
+  const kt = (STATE.header.kt_broj || "").trim();
+  if (!ime || !kt) {
+    const missing = [];
+    if (!ime) missing.push("Prezime i ime");
+    if (!kt) missing.push("KT broj");
+    const proceed = confirm(
+      `Upozorenje: nedostaje ${missing.join(" i ")} u zaglavlju.\n\n` +
+      `Bez toga, fajl će se zvati "Zapisnik YYYY-MM-DD HH-MM.docx" umjesto "Prezime Ime - KT broj.docx".\n\n` +
+      `Generisati svejedno?`
+    );
+    if (!proceed) {
+      // Otvori zaglavlje da korisnik popuni
+      const headerCard = $("#header-card");
+      if (headerCard) {
+        headerCard.classList.add("open");
+        headerCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return;
+    }
+  }
+  const btn = $("#btn-generate");
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "⏳ Generišem...";
+
+  // Server očekuje sections kao { section_id: string }.
+  // Single sekcije: pošalji final ili raw fallback.
+  // Multi sekcije: spoji items u newline-joined string (final ili raw fallback po stavci).
+  const flatSections = {};
+  for (const sid in STATE.sections) {
+    const s = STATE.sections[sid];
+    if (typeof s === "string") {
+      flatSections[sid] = s;
+    } else if (s && Array.isArray(s.items)) {
+      // Multi: skupi po stavki najbolji dostupni tekst
+      const lines = s.items
+        .map(it => (it.final || it.raw || "").trim())
+        .filter(Boolean);
+      if (lines.length) flatSections[sid] = lines.join("\n");
+    } else if (s && (s.final || s.raw)) {
+      flatSections[sid] = s.final || s.raw;
+    }
+  }
+  try {
+    // Direktan poziv Python-a (bez servera). Vraća {filename, docx_b64}.
+    const res = await nativeCall("generate", { header: STATE.header, sections: flatSections });
+    if (res && res.__error) throw new Error(res.detail || ("status " + res.status));
+    const filename = res.filename || "zapisnik.docx";
+    window.AndroidBridge.saveDocx(filename, res.docx_b64);
+    toast("Zapisnik snimljen u Download ✓", "success");
+  } catch (err) {
+    toast("Greška generisanja: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+// === Drafts (multi) ===
+let autoSaveTimer = null;
+
+function autoSave() {
+  // Debounce — sačuvaj nakon 500ms mirovanja
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    let id = getCurrentDraftId();
+    if (!id) {
+      id = createNewDraft(autoDraftName(STATE.header));
+      STATE.currentDraftId = id;
+      updateDraftIndicator();
+    }
+    const name = autoDraftName(STATE.header);
+    try {
+      persistDraft(id, name, STATE.header, STATE.sections);
+      // Ažuriraj naš poznati server timestamp (čak i pre uspjesnog upload-a, da polling
+      // ne reaguje na naš rođeni write tokom timestamp toleranje od 2s)
+      STATE.lastKnownServerTs = Date.now();
+      flashSavedIndicator();
+    } catch (e) {
+      console.error("autoSave error:", e);
+    }
+  }, 500);
+}
+
+async function loadCurrentDraftIntoState() {
+  const id = getCurrentDraftId();
+  STATE.currentDraftId = id;
+  if (!id) {
+    STATE.header = {};
+    STATE.sections = {};
+    return false;
+  }
+  const data = await loadDraftById(id);
+  if (!data) {
+    setCurrentDraftId(null);
+    STATE.currentDraftId = null;
+    STATE.header = {};
+    STATE.sections = {};
+    return false;
+  }
+  STATE.header = data.header || {};
+  STATE.sections = data.sections || {};
+  STATE.lastKnownServerTs = data.updatedAt || 0;
+  migrateSectionState();
+  return true;
+}
+
+async function switchToDraft(id) {
+  const data = await loadDraftById(id);
+  if (!data) {
+    toast("Draft ne postoji", "error");
+    return;
+  }
+  setCurrentDraftId(id);
+  STATE.currentDraftId = id;
+  STATE.header = data.header || {};
+  STATE.sections = data.sections || {};
+  STATE.lastKnownServerTs = data.updatedAt || 0;
+  migrateSectionState();
+  renderHeaderForm();
+  renderSections();
+  updateDraftIndicator();
+  hideConflictBanner();
+  toast(`Učitan: ${data.name}`, "success");
+}
+
+function newDraft() {
+  // Pitaj samo ako trenutni draft ima sadržaj
+  const hasContent = Object.keys(STATE.header).some(k => STATE.header[k])
+    || Object.keys(STATE.sections).length > 0;
+  if (hasContent && !confirm("Otvoriti novi prazan draft? Trenutni će biti sačuvan u listi.")) {
+    return;
+  }
+  const id = createNewDraft(autoDraftName({}));
+  STATE.currentDraftId = id;
+  STATE.header = {};
+  STATE.sections = {};
+  renderHeaderForm();
+  renderSections();
+  updateDraftIndicator();
+  toast("Novi draft kreiran ✓", "success");
+}
+
+function clearCurrent() {
+  if (!confirm("Obrisati sav sadržaj trenutnog drafta? (Sami draft ostaje u listi, samo ga prazniš.)")) return;
+  STATE.header = {};
+  STATE.sections = {};
+  renderHeaderForm();
+  renderSections();
+  autoSave();
+  toast("Sadržaj obrisan");
+}
+
+// === Drafts modal ===
+function openDraftsModal() {
+  const drafts = listDrafts();
+  const currentId = getCurrentDraftId();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Sačuvani draftovi (${drafts.length})</h2>
+        <button class="modal-close" data-close-modal>✕</button>
+      </div>
+      <div class="modal-body">
+        ${drafts.length === 0
+          ? '<p class="modal-empty">Nema sačuvanih draftova. Kad počneš popunjavati zaglavlje, automatski se kreira novi draft.</p>'
+          : drafts.map(d => {
+              const date = new Date(d.updatedAt).toLocaleString("bs-BA");
+              const isCurrent = d.id === currentId;
+              const localBadge = d.localOnly ? '<span class="local-only-badge" title="Nije uplodovan na server">⚠ samo lokalno</span>' : '';
+              return `
+                <div class="draft-row ${isCurrent ? 'current' : ''}" data-draft-id="${d.id}">
+                  <div class="draft-info">
+                    <div class="draft-name">${isCurrent ? '● ' : ''}${escapeHtml(d.name)}${localBadge}</div>
+                    <div class="draft-date">${date}</div>
+                  </div>
+                  <div class="draft-actions">
+                    ${isCurrent ? '<span class="draft-badge">trenutno</span>'
+                      : `<button class="btn-draft-open" data-open-id="${d.id}">Otvori</button>`}
+                    <button class="btn-draft-rename" data-rename-id="${d.id}" title="Preimenuj">✎</button>
+                    <button class="btn-draft-delete" data-delete-id="${d.id}" title="Obriši">🗑</button>
+                  </div>
+                </div>
+              `;
+            }).join("")
+        }
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-close-modal>Zatvori</button>
+        <button class="btn-primary" data-new-draft>+ Novi prazan draft</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", e => {
+    if (e.target === overlay) closeDraftsModal(overlay);
+  });
+  overlay.querySelectorAll("[data-close-modal]").forEach(b =>
+    b.addEventListener("click", () => closeDraftsModal(overlay))
+  );
+  overlay.querySelectorAll("[data-open-id]").forEach(b =>
+    b.addEventListener("click", async () => {
+      await switchToDraft(b.dataset.openId);
+      closeDraftsModal(overlay);
+    })
+  );
+  overlay.querySelectorAll("[data-rename-id]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const id = b.dataset.renameId;
+      const d = listDrafts().find(x => x.id === id);
+      const newName = prompt("Novi naziv drafta:", d ? d.name : "");
+      if (newName && newName.trim() && d) {
+        const data = await loadDraftById(id);
+        if (data) {
+          persistDraft(id, newName.trim(), data.header, data.sections);
+          closeDraftsModal(overlay);
+          openDraftsModal();
+        }
+      }
+    })
+  );
+  overlay.querySelectorAll("[data-delete-id]").forEach(b =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.deleteId;
+      const d = listDrafts().find(x => x.id === id);
+      if (!d) return;
+      if (!confirm(`Obrisati draft "${d.name}"? Ova akcija se ne može poništiti.`)) return;
+      const wasCurrent = id === getCurrentDraftId();
+      deleteDraft(id);
+      if (wasCurrent) {
+        // Ako brišeš trenutni, učitaj prazno stanje
+        STATE.currentDraftId = null;
+        STATE.header = {};
+        STATE.sections = {};
+        renderHeaderForm();
+        renderSections();
+        updateDraftIndicator();
+      }
+      closeDraftsModal(overlay);
+      openDraftsModal();
+    })
+  );
+  overlay.querySelector("[data-new-draft]").addEventListener("click", () => {
+    closeDraftsModal(overlay);
+    newDraft();
+  });
+}
+
+function closeDraftsModal(overlay) {
+  if (overlay && overlay.parentElement) overlay.parentElement.removeChild(overlay);
+}
+
+// === Draft indikator u topbar-u ===
+function updateDraftIndicator() {
+  const ind = $("#draft-name-indicator");
+  if (!ind) return;
+  const id = STATE.currentDraftId || getCurrentDraftId();
+  if (!id) {
+    ind.textContent = "(nema drafta)";
+    ind.classList.add("dim");
+    return;
+  }
+  ind.classList.remove("dim");
+  // Auto ažuriraj naziv prema header-u (ime/KT)
+  const name = autoDraftName(STATE.header);
+  ind.textContent = name;
+}
+
+let savedFlashTimer = null;
+function flashSavedIndicator() {
+  const dot = $("#save-status-dot");
+  if (!dot) return;
+  dot.classList.add("saved");
+  clearTimeout(savedFlashTimer);
+  savedFlashTimer = setTimeout(() => dot.classList.remove("saved"), 800);
+}
+
+// === Polling: provjeri server za izmjene ===
+const POLL_INTERVAL_MS = 10000;  // 10 sekundi
+let pollTimer = null;
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollServerForChanges, POLL_INTERVAL_MS);
+}
+
+async function pollServerForChanges() {
+  // Skip ako je tab nevidljiv (battery saving)
+  if (document.hidden) return;
+
+  // 1. Osvježi listu draftova
+  const list = await refreshDraftsFromServer();
+  if (!list) return;  // server unreachable, šuti
+
+  // 2. Ako je modal otvoren, re-render listu
+  const openModal = document.querySelector(".modal-overlay");
+  if (openModal) {
+    closeDraftsModal(openModal);
+    openDraftsModal();
+  }
+
+  // 3. Provjeri da li server ima noviju verziju TRENUTNO otvorenog drafta
+  const currentId = STATE.currentDraftId;
+  if (!currentId) return;
+  const serverEntry = list.find(d => d.id === currentId);
+  if (!serverEntry) return;
+  const myTs = STATE.lastKnownServerTs || 0;
+  // Treshold: razlika veća od 2s (da ne reaguje na vlastiti upload)
+  if (serverEntry.updatedAt > myTs + 2000) {
+    showConflictBanner(currentId, serverEntry.updatedAt);
+  }
+}
+
+// === Konflikt banner ===
+function showConflictBanner(draftId, serverTs) {
+  hideConflictBanner();
+  const banner = document.createElement("div");
+  banner.id = "conflict-banner";
+  banner.className = "conflict-banner";
+  banner.innerHTML = `
+    <span class="conflict-icon">⚠</span>
+    <span class="conflict-text">
+      Server ima <b>noviju verziju</b> ovog drafta
+      (${new Date(serverTs).toLocaleTimeString("bs-BA")}).
+      Vjerovatno je drugi uređaj radio izmjene.
+    </span>
+    <div class="conflict-actions">
+      <button class="btn-conflict-load">⬇ Učitaj sa servera</button>
+      <button class="btn-conflict-keep">✓ Zadrži moje izmjene</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+  banner.querySelector(".btn-conflict-load").addEventListener("click", async () => {
+    await switchToDraft(draftId);
+    hideConflictBanner();
+  });
+  banner.querySelector(".btn-conflict-keep").addEventListener("click", () => {
+    // Forsiraj upload trenutnog stanja sa novim timestamp-om
+    autoSave();
+    hideConflictBanner();
+    toast("Tvoje izmjene su snimljene kao najnovija verzija");
+  });
+}
+
+function hideConflictBanner() {
+  const b = $("#conflict-banner");
+  if (b) b.remove();
+}
+
+// === Util ===
+// Parsiraj Content-Disposition header — handle filename*=utf-8'' (RFC 5987) i filename=
+function parseContentDispositionFilename(cd) {
+  if (!cd) return null;
+  // RFC 5987 format: filename*=utf-8''<URL-encoded>
+  const m1 = cd.match(/filename\*=utf-8''([^;]+)/i);
+  if (m1) {
+    try { return decodeURIComponent(m1[1].trim()); }
+    catch { /* fall through */ }
+  }
+  // Standardni format: filename="..."
+  const m2 = cd.match(/filename="([^"]+)"/i);
+  if (m2) return m2[1];
+  // Standardni bez navodnika: filename=...
+  const m3 = cd.match(/filename=([^;]+)/i);
+  if (m3) return m3[1].trim();
+  return null;
+}
+
+// Datum format koji koristi vještak: "DD.MM.YYYY. godine"
+function formatDateToday() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}. godine`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
+  }[c]));
+}
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/'/g, "&#39;");
+}
+
+// === Init ===
+async function init() {
+  try {
+    STATE.config = await api("/api/config");
+
+    let statusText = "Gboard mode";
+    let statusLevel = "warn";
+    if (STATE.config.stt_options.includes("groq")) {
+      statusText = "Groq Whisper ✓";
+      statusLevel = "ok";
+    }
+    if (!STATE.config.claude_available) {
+      statusText += " · bez Claude";
+      statusLevel = "err";
+    }
+    setStatus(statusText, statusLevel);
+  } catch (err) {
+    setStatus("Server nedostupan", "err");
+    toast("Ne mogu učitati config: " + err.message, "error");
+    return;
+  }
+
+  // Migracija starih draftova → novi sistem (jednom)
+  migrateLegacyDraft();
+
+  // Povuci listu sa servera i merge sa lokalnim cache-om
+  await refreshDraftsFromServer();
+
+  // Učitaj trenutni draft (ako postoji) — pokušaj server prvo
+  await loadCurrentDraftIntoState();
+
+  renderHeaderForm();
+  renderSections();
+  updateDraftIndicator();
+
+  // Pokreni polling za live sync
+  startPolling();
+
+  if (!STATE.header.ime_prezime) {
+    $("#header-card").classList.add("open");
+  }
+
+  $("#btn-drafts").addEventListener("click", openDraftsModal);
+  $("#btn-new-draft").addEventListener("click", newDraft);
+  $("#btn-clear").addEventListener("click", clearCurrent);
+  $("#btn-generate").addEventListener("click", generateReport);
+
+  // Service worker se NE registruje u native aplikaciji (nema servera; izbjegava cache probleme).
+}
+
+init();
