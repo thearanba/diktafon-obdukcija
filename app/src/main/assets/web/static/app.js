@@ -425,18 +425,14 @@ const DEFAULT_IZUZETI_SENTENCE = "Tokom obdukcije izuzeti uzorci: papilarnih lin
   "uzorak krvi za DNA te uzorci krvi, očne vodice, urina, žući i želučanog sadržaja za " +
   "analizu na alkohol i psihoaktivne supstance. Svi uzorci predani krim-tehničaru na dalje postupanje.";
 
-const DEFAULT_IZUZETI_CHECKED = {
-  "papilarne linije": true, "uzorak krvi za DNA": true,
-  "krv": true, "urin": true,
-  "očna vodica": true, "žuč": true, "želučani sadržaj": true,
-};
 function izuzetiInitState() {
-  if (!STATE.header.izuzeti_checked) STATE.header.izuzeti_checked = { ...DEFAULT_IZUZETI_CHECKED };
+  // Novi/prazan nalaz → NIJEDAN uzorak nije selektovan (korisnik bira šta je izuzeto)
+  if (!STATE.header.izuzeti_checked) STATE.header.izuzeti_checked = {};
   if (!STATE.header.izuzeti_manual) STATE.header.izuzeti_manual = {};
 }
-// Eksplicitan reset na svježe default-e (za novi/očišćen draft)
+// Eksplicitan reset — ništa nije selektovano (0)
 function izuzetiResetDefaults() {
-  STATE.header.izuzeti_checked = { ...DEFAULT_IZUZETI_CHECKED };
+  STATE.header.izuzeti_checked = {};
   STATE.header.izuzeti_manual = {};
   STATE.header.izuzeti_uzorci = "";
 }
