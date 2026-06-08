@@ -847,12 +847,6 @@ function renderItem(s, idx, item) {
         <textarea class="dict-textarea raw item-raw" data-item-target="raw"
           data-item-section="${s.id}" data-item-idx="${idx}"
           placeholder="${escapeAttr(placeholderRaw)}">${escapeHtml(item.raw || '')}</textarea>
-        <div class="dict-controls">
-          <button class="btn-mic" data-item-mic="${s.id}" data-item-idx="${idx}">
-            🎤 <span class="mic-label">Diktiraj</span>
-          </button>
-          <button class="btn-merge" data-item-merge="${s.id}" data-item-idx="${idx}">🪄 Spoji</button>
-        </div>
       </div>
 
       <div class="tab-pane" data-pane="final" style="display:none;">
@@ -871,6 +865,14 @@ function bindSectionEvents() {
   container.querySelectorAll(".seg-tab").forEach(tab => {
     tab.addEventListener("click", () =>
       switchTab(tab.closest(".item-card") || tab.closest(".card"), tab.dataset.tab));
+  });
+
+  // Selekcija stavke (multi) — klik na stavku je čini aktivnom; donja traka radi nad njom
+  container.querySelectorAll(".item-card").forEach(ic => {
+    ic.addEventListener("click", (e) => {
+      if (e.target.closest("[data-remove-item]")) return;  // ✕ ne selektuje
+      selectFocusItem(parseInt(ic.dataset.itemIdx, 10));
+    });
   });
 
   // Single section events
@@ -988,6 +990,7 @@ function bindSectionEvents() {
       const sid = btn.dataset.addItem;
       addItem(sid);
       rerenderMultiBody(sid);
+      selectFocusItem(getSection(sid).items.length - 1);  // selektuj novu stavku
       // Skroluj na novi item i fokusiraj
       setTimeout(() => {
         const sec = getSection(sid);
@@ -1031,6 +1034,10 @@ function rerenderMultiBody(sid) {
   }
   bindSectionEvents();
   updateSectionStatus(sid);
+  // Zadrži vizuelnu selekciju aktivne stavke (ako je ova sekcija u fokusu)
+  if (STATE.focusSectionId === sid && STATE.focusItemIdx != null) {
+    selectFocusItem(STATE.focusItemIdx);
+  }
 }
 
 function updateSectionStatus(sectionId) {
@@ -1168,13 +1175,24 @@ function enterFocus(sid) {
   document.body.classList.add("has-fullscreen");
   const fnav = document.getElementById("focus-nav");
   if (fnav) fnav.classList.add("show");
-  // Spoji/Obriši u kokpitu imaju smisla samo za obične sekcije (multi je po-stavci)
+  // Donja traka: Spoji za oba (single=sekcija, multi=selektovana stavka).
+  // Lijevo dugme: single → „✕ Obriši" (raw), multi → „➕ Nova" (nova stavka).
   const sdef = (STATE.config.sections || []).find(s => s.id === sid);
   const isMulti = !!(sdef && sdef.multi);
   const fMerge = document.getElementById("focus-merge");
   const fClear = document.getElementById("focus-clear");
-  if (fMerge) fMerge.style.display = isMulti ? "none" : "";
-  if (fClear) fClear.style.display = isMulti ? "none" : "";
+  if (fMerge) fMerge.style.display = "";
+  if (fClear) {
+    fClear.style.display = "";
+    if (isMulti) { fClear.textContent = "➕ Nova"; fClear.classList.remove("danger"); }
+    else { fClear.textContent = "✕ Obriši"; fClear.classList.add("danger"); }
+  }
+  if (isMulti) {
+    const items = (getSection(sid).items || []);
+    selectFocusItem(items.length > 0 ? items.length - 1 : 0);
+  } else {
+    STATE.focusItemIdx = null;
+  }
   updateFocusNav();
   updateFocusMic();
   autoGrowIn(card);
@@ -1236,20 +1254,26 @@ function setFocusMergeWorking(working) {
   b.textContent = working ? "⏳ Spajam..." : "🪄 Spoji";
 }
 
+// Selektuj stavku (povredu) u multi sekciji — donja traka radi nad njom; vizuelno se istakne.
+function selectFocusItem(idx) {
+  STATE.focusItemIdx = idx;
+  const sid = STATE.focusSectionId;
+  if (!sid) return;
+  const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
+  if (!card) return;
+  card.querySelectorAll(".item-card").forEach(ic => {
+    ic.classList.toggle("selected", parseInt(ic.dataset.itemIdx, 10) === idx);
+  });
+}
+
 function focusMic() {
   const sid = STATE.focusSectionId;
   if (!sid) return;
   const sdef = (STATE.config.sections || []).find(s => s.id === sid);
   if (sdef && sdef.multi) {
-    const sec = getSection(sid);
-    const items = sec.items || [];
-    let idx = items.length - 1;
-    const last = items[idx];
-    if (idx < 0 || ((last && (last.raw || last.final || "")).trim())) {
-      addItem(sid);
-      rerenderMultiBody(sid);
-      idx = getSection(sid).items.length - 1;
-    }
+    let idx = STATE.focusItemIdx;
+    if (idx == null || !getItem(sid, idx)) idx = 0;
+    selectFocusItem(idx);
     toggleItemRecording(sid, idx);
   } else {
     const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
@@ -1393,10 +1417,11 @@ async function mergeItem(sectionId, itemIdx) {
 
   // Loguj korekciju (ako je korisnik editovao prije Spoji)
   maybeLogCorrection(`item:${sectionId}:${itemIdx}:raw`, item.raw);
+  // Inline dugme više ne postoji (Spoji je u donjoj traci) — feedback ide na kokpit dugme.
   const btn = document.querySelector(`[data-item-merge="${sectionId}"][data-item-idx="${itemIdx}"]`);
-  const oldLabel = btn.textContent;
-  btn.textContent = "⏳";
-  btn.disabled = true;
+  const oldLabel = btn ? btn.textContent : "";
+  if (btn) { btn.textContent = "⏳"; btn.disabled = true; }
+  setFocusMergeWorking(true);
   try {
     const res = await api("/api/merge", {
       method: "POST",
@@ -1427,8 +1452,8 @@ async function mergeItem(sectionId, itemIdx) {
   } catch (err) {
     toast("Greška: " + err.message, "error");
   } finally {
-    btn.textContent = oldLabel;
-    btn.disabled = false;
+    if (btn) { btn.textContent = oldLabel; btn.disabled = false; }
+    setFocusMergeWorking(false);
   }
 }
 
@@ -2097,12 +2122,29 @@ async function init() {
   const fClear = $("#focus-clear");
   const fMerge = $("#focus-merge");
   if (fClear) fClear.addEventListener("click", () => {
-    if (STATE.focusSectionId)
-      document.querySelector(`[data-clear-raw="${STATE.focusSectionId}"]`)?.click();
+    const sid = STATE.focusSectionId;
+    if (!sid) return;
+    const sdef = (STATE.config.sections || []).find(s => s.id === sid);
+    if (sdef && sdef.multi) {
+      // ➕ Nova stavka → dodaj i selektuj
+      addItem(sid);
+      rerenderMultiBody(sid);
+      selectFocusItem(getSection(sid).items.length - 1);
+    } else {
+      document.querySelector(`[data-clear-raw="${sid}"]`)?.click();
+    }
   });
   if (fMerge) fMerge.addEventListener("click", () => {
-    if (STATE.focusSectionId)
-      document.querySelector(`[data-merge="${STATE.focusSectionId}"]`)?.click();
+    const sid = STATE.focusSectionId;
+    if (!sid) return;
+    const sdef = (STATE.config.sections || []).find(s => s.id === sid);
+    if (sdef && sdef.multi) {
+      let idx = STATE.focusItemIdx;
+      if (idx == null || !getItem(sid, idx)) idx = 0;
+      mergeItem(sid, idx);
+    } else {
+      mergeSection(sid);
+    }
   });
 
   // Service worker se NE registruje u native aplikaciji (nema servera; izbjegava cache probleme).
