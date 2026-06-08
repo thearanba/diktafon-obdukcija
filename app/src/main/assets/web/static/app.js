@@ -410,6 +410,25 @@ function setStatus(text, level = "") {
   b.className = "status " + level;
 }
 
+// Switch "Uviđaj": ručni prelaz između (a) okolnosti iz naredbe (Claude popunjava) i
+// (b) ličnog uviđaja (ti diktiraš/upisuješ — Auto-popuni NE smije prebrisati).
+function buildUvidjajSwitch() {
+  const on = !!STATE.header.uvidjaj_lock;
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  wrap.innerHTML = `
+    <button type="button" id="uvidjaj-switch" class="uvidjaj-switch ${on ? 'active' : ''}" aria-pressed="${on}">
+      <span class="uvidjaj-knob"></span>
+      <span class="uvidjaj-text">${on
+        ? '📍 UVIĐAJ — lično prisustvo (Claude ne dira)'
+        : '📄 Okolnosti iz naredbe (Claude popunjava)'}</span>
+    </button>
+    <div class="extract-hint">${on
+      ? 'Ti upisuješ/diktiraš uviđaj — Auto-popuni ga neće prebrisati.'
+      : 'Auto-popuni iz naredbe puni ovo polje. Uključi za lični uviđaj.'}</div>`;
+  return wrap;
+}
+
 // === Render: header form ===
 function renderHeaderForm() {
   const body = $("#header-body");
@@ -480,6 +499,11 @@ function renderHeaderForm() {
       wrap.appendChild(quickWrap);
     }
     body.appendChild(wrap);
+
+    // Switch "Uviđaj" odmah iza polja naziva okolnosti
+    if (f.id === "okolnosti_label") {
+      body.appendChild(buildUvidjajSwitch());
+    }
   }
 
   // Bind input events
@@ -503,6 +527,22 @@ function renderHeaderForm() {
       autoSave();
     });
   });
+
+  // Switch "Uviđaj" — ručni prelaz: naredba (Claude) ↔ lični uviđaj (zaključan)
+  const uvSwitch = body.querySelector("#uvidjaj-switch");
+  if (uvSwitch) {
+    uvSwitch.addEventListener("click", () => {
+      const now = !STATE.header.uvidjaj_lock;
+      STATE.header.uvidjaj_lock = now;
+      STATE.header.okolnosti_label = now ? "Uviđaj" : "Okolnosti slučaja";
+      renderHeaderForm();
+      updateHeaderSummary();
+      autoSave();
+      toast(now
+        ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
+        : "Uviđaj isključen — okolnosti se popunjavaju iz naredbe", "success");
+    });
+  }
 
   // Extract naredba — dugme i file input
   const btnExtract = $("#btn-extract-naredba");
@@ -533,8 +573,12 @@ async function extractNaredba(file, btn) {
     fd.append("file", file);
     const res = await api("/api/extract_naredba", { method: "POST", body: fd });
     const data = res.data || {};
-    let count = 0;
+    // Uviđaj mod: NE diraj okolnosti ni naziv polja — to je tvoj lični unos.
+    const locked = STATE.header.uvidjaj_lock
+      ? new Set(["okolnosti", "okolnosti_label"]) : new Set();
+    let count = 0, skipped = 0;
     for (const key in data) {
+      if (locked.has(key)) { skipped++; continue; }
       if (data[key] !== undefined && data[key] !== "") {
         STATE.header[key] = data[key];
         count++;
@@ -542,7 +586,8 @@ async function extractNaredba(file, btn) {
     }
     renderHeaderForm();  // re-render sa novim vrijednostima
     autoSave();
-    toast(`Popunjeno ${count} polja iz naredbe ✓ (${res.tokens_in}+${res.tokens_out} tokens)`, "success");
+    const lockNote = skipped ? ` (uviđaj zaključan — okolnosti netaknute)` : "";
+    toast(`Popunjeno ${count} polja iz naredbe ✓${lockNote}`, "success");
   } catch (err) {
     toast("Greška: " + err.message, "error");
   } finally {

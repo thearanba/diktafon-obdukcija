@@ -398,6 +398,56 @@ html, body {
   font-style: italic;
 }
 
+/* Switch "Uviđaj" (naredba ↔ lični uviđaj) */
+.uvidjaj-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+.uvidjaj-switch .uvidjaj-knob {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--border);
+  position: relative;
+  transition: background 0.15s;
+}
+.uvidjaj-switch .uvidjaj-knob::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.uvidjaj-switch.active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+.uvidjaj-switch.active .uvidjaj-knob {
+  background: #f59e0b;
+}
+.uvidjaj-switch.active .uvidjaj-knob::after {
+  left: 18px;
+}
+.uvidjaj-switch .uvidjaj-text { flex: 1; line-height: 1.25; }
+
 /* Form polja zaglavlja */
 .field {
   margin-bottom: 12px;

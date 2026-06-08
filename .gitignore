@@ -10,4 +10,5 @@
 app/build/
 **/build/
 *.apk
+/keystore/
 !**/wrapper/gradle-wrapper.jar

@@ -21,10 +21,26 @@ android {
         }
     }
 
+    signingConfigs {
+        debug {
+            // Eksplicitan, STABILAN debug keystore (isti potpis svaki build → instalacija
+            // PREKO postojeće). Fajl generiše/kešira CI; lokalno (AS) se generiše po potrebi.
+            storeFile file("$rootDir/keystore/debug.keystore")
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         debug {
             // Debug APK se može sideload-ati bez Play Store-a; nije minifikovan
             minifyEnabled false
+            // Koristi stabilan keystore SAMO ako postoji (CI ga generiše/kešira).
+            // Lokalno bez njega → AGP default debug potpis (build ne puca).
+            if (file("$rootDir/keystore/debug.keystore").exists()) {
+                signingConfig signingConfigs.debug
+            }
         }
         release {
             minifyEnabled false
