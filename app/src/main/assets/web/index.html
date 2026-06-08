@@ -51,11 +51,17 @@
   <div id="toast" class="toast hidden"></div>
 </main>
 
-<!-- Donja traka u fokus-modu: prethodna / veliki mikrofon / sljedeća -->
+<!-- Donja traka u fokus-modu: navigacija (gornji red) + akcije uz mikrofon (donji red) -->
 <div id="focus-nav" class="focus-nav">
-  <button id="focus-prev" class="focus-side">←</button>
-  <button id="focus-mic" class="focus-mic">🎤</button>
-  <button id="focus-next" class="focus-side">→</button>
+  <div class="focus-row focus-prevnext">
+    <button id="focus-prev" class="focus-side">←</button>
+    <button id="focus-next" class="focus-side">→</button>
+  </div>
+  <div class="focus-row focus-actions">
+    <button id="focus-clear" class="focus-act danger">✕ Obriši</button>
+    <button id="focus-mic" class="focus-mic">🎤</button>
+    <button id="focus-merge" class="focus-act primary">🪄 Spoji</button>
+  </div>
 </div>
 
 <script src="/static/app.js"></script>

@@ -374,6 +374,7 @@ html, body {
   margin-bottom: 12px;
   overflow: hidden;
   border: 1px solid var(--border);
+  scroll-margin-top: 52px;  /* da otvorena sekcija ne zađe pod sticky traku */
 }
 .card-header {
   width: 100%;
@@ -412,19 +413,24 @@ html, body {
 }
 .collapsible.open .card-body { display: block; }
 
-/* Fokus dugme + cijeli-ekran mod sekcije */
+/* Zaglavlje sekcije: naslov (toggle) + ⛶ ikona desno, u istoj liniji */
+.card-header-row {
+  display: flex;
+  align-items: stretch;
+}
+.card-header-row .card-header { flex: 1; min-width: 0; }
 .btn-focus {
-  display: inline-block;
-  background: var(--surface-2);
+  flex: 0 0 auto;
+  background: transparent;
   color: var(--text-dim);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 6px 10px;
-  font-size: 12px;
-  margin-bottom: 10px;
+  border: none;
+  border-left: 1px solid var(--border);
+  font-size: 20px;
+  line-height: 1;
+  width: 48px;
   cursor: pointer;
 }
-.btn-focus:hover, .btn-focus:active { background: var(--border); color: var(--text); }
+.btn-focus:hover, .btn-focus:active { background: var(--surface-2); color: var(--text); }
 .card.fullscreen {
   position: fixed;
   inset: 0;
@@ -435,15 +441,17 @@ html, body {
   overflow-y: auto;
   box-shadow: none;
 }
-.card.fullscreen .card-header {
+.card.fullscreen .card-header-row {
   position: sticky;
   top: 0;
   z-index: 2;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-/* prostor na dnu da posljednje polje ne ostane iza tastature */
-.card.fullscreen .card-body { padding-bottom: 45vh; }
+/* U fokusu: gornje kontrole „Diktat" pane-a (Diktiraj/Spoji/Obriši) idu dolje uz mikrofon */
+.card.fullscreen .tab-pane[data-pane="raw"] .dict-controls { display: none; }
+/* prostor na dnu da posljednje polje ne ostane iza tastature + donje trake */
+.card.fullscreen .card-body { padding-bottom: 52vh; }
 body.has-fullscreen { overflow: hidden; }
 
 /* Tabovi: Diktat | Finalno */
@@ -469,29 +477,29 @@ body.has-fullscreen { overflow: hidden; }
 }
 .seg-tab.active { background: var(--primary); color: #fff; }
 
-/* Fokus-kokpit: donja traka (← / 🎤 / →) */
+/* Fokus-kokpit: donja traka — 2 reda (navigacija + akcije uz mikrofon) */
 .focus-nav {
   display: none;
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 300;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
   box-shadow: 0 -4px 14px rgba(0,0,0,0.4);
 }
 .focus-nav.show { display: flex; }
+.focus-row { display: flex; align-items: center; gap: 8px; }
+.focus-prevnext .focus-side { flex: 1; }
+.focus-actions { justify-content: center; }
 .focus-side {
-  flex: 1;
-  max-width: 38%;
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 9px;
-  padding: 12px 8px;
+  padding: 9px 8px;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -500,15 +508,28 @@ body.has-fullscreen { overflow: hidden; }
   cursor: pointer;
 }
 .focus-side:disabled { opacity: 0.35; }
+.focus-act {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 12px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.focus-act.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.focus-act.danger { color: #fca5a5; }
 .focus-mic {
   flex: 0 0 auto;
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: var(--primary);
   border: none;
   color: #fff;
-  font-size: 26px;
+  font-size: 24px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
 }

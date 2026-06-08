@@ -737,11 +737,14 @@ function renderSections() {
     card.dataset.sectionId = s.id;
 
     const headerHtml = `
-      <button class="card-header" data-toggle>
-        <span class="caret">▸</span>
-        <span class="section-status"></span>
-        <span class="card-title">${escapeHtml(s.title)}</span>
-      </button>
+      <div class="card-header-row">
+        <button class="card-header" data-toggle>
+          <span class="caret">▸</span>
+          <span class="section-status"></span>
+          <span class="card-title">${escapeHtml(s.title)}</span>
+        </button>
+        <button class="btn-focus" data-focus title="Cijeli ekran" aria-label="Cijeli ekran">⛶</button>
+      </div>
     `;
     if (s.multi) {
       card.innerHTML = headerHtml + renderMultiBody(s);
@@ -764,8 +767,6 @@ function renderSingleBody(s) {
 
   return `
     <div class="card-body">
-      <button class="btn-focus" data-focus>⛶ Cijeli ekran</button>
-
       <div class="seg-tabs">
         <button class="seg-tab active" data-tab="raw">Diktat</button>
         <button class="seg-tab" data-tab="final">Finalno</button>
@@ -810,7 +811,6 @@ function renderMultiBody(s) {
                    s.id === "dodatne" ? "stavku" : "povredu";
   return `
     <div class="card-body">
-      <button class="btn-focus" data-focus>⛶ Cijeli ekran</button>
       ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
       <div class="items-container" data-items-for="${s.id}">${itemsHtml}</div>
       <button class="btn-add-item" data-add-item="${s.id}">+ Dodaj ${itemNoun}</button>
@@ -1009,13 +1009,13 @@ function rerenderMultiBody(sid) {
   const isOpen = card.classList.contains("open");
   const isFs = card.classList.contains("fullscreen");
   const def = getSectionDef(sid);
-  const headerHtml = card.querySelector(".card-header").outerHTML;
+  const headerHtml = card.querySelector(".card-header-row").outerHTML;
   card.innerHTML = headerHtml + renderMultiBody(def);
   if (isOpen) card.classList.add("open");
   if (isFs) {
     card.classList.add("fullscreen");
     const fb = card.querySelector("[data-focus]");
-    if (fb) fb.textContent = "✕ Izađi iz fokusa";
+    if (fb) fb.textContent = "✕";
   }
   bindSectionEvents();
   updateSectionStatus(sid);
@@ -1107,6 +1107,8 @@ document.addEventListener("click", e => {
     });
     card.classList.add("open");
     autoGrowIn(card);
+    // Skrolaj otvorenu sekciju na vrh vidljivog dijela
+    setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   } else {
     card.classList.remove("open");
   }
@@ -1136,17 +1138,24 @@ function enterFocus(sid) {
   document.querySelectorAll(".card.fullscreen").forEach(c => {
     c.classList.remove("fullscreen");
     const b = c.querySelector("[data-focus]");
-    if (b) b.textContent = "⛶ Cijeli ekran";
+    if (b) b.textContent = "⛶";
   });
   const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
   if (!card) return;
   card.classList.add("open", "fullscreen");
   const fb = card.querySelector("[data-focus]");
-  if (fb) fb.textContent = "✕ Izađi iz fokusa";
+  if (fb) fb.textContent = "✕";
   STATE.focusSectionId = sid;
   document.body.classList.add("has-fullscreen");
   const fnav = document.getElementById("focus-nav");
   if (fnav) fnav.classList.add("show");
+  // Spoji/Obriši u kokpitu imaju smisla samo za obične sekcije (multi je po-stavci)
+  const sdef = (STATE.config.sections || []).find(s => s.id === sid);
+  const isMulti = !!(sdef && sdef.multi);
+  const fMerge = document.getElementById("focus-merge");
+  const fClear = document.getElementById("focus-clear");
+  if (fMerge) fMerge.style.display = isMulti ? "none" : "";
+  if (fClear) fClear.style.display = isMulti ? "none" : "";
   updateFocusNav();
   updateFocusMic();
   autoGrowIn(card);
@@ -1157,7 +1166,7 @@ function exitFocus() {
   document.querySelectorAll(".card.fullscreen").forEach(c => {
     c.classList.remove("fullscreen");
     const b = c.querySelector("[data-focus]");
-    if (b) b.textContent = "⛶ Cijeli ekran";
+    if (b) b.textContent = "⛶";
   });
   STATE.focusSectionId = null;
   document.body.classList.remove("has-fullscreen");
@@ -2051,6 +2060,17 @@ async function init() {
   if (fPrev) fPrev.addEventListener("click", () => focusGo(-1));
   if (fNext) fNext.addEventListener("click", () => focusGo(1));
   if (fMic) fMic.addEventListener("click", focusMic);
+  // Obriši / Spoji u kokpitu — proxy na inline dugmad fokusirane sekcije
+  const fClear = $("#focus-clear");
+  const fMerge = $("#focus-merge");
+  if (fClear) fClear.addEventListener("click", () => {
+    if (STATE.focusSectionId)
+      document.querySelector(`[data-clear-raw="${STATE.focusSectionId}"]`)?.click();
+  });
+  if (fMerge) fMerge.addEventListener("click", () => {
+    if (STATE.focusSectionId)
+      document.querySelector(`[data-merge="${STATE.focusSectionId}"]`)?.click();
+  });
 
   // Service worker se NE registruje u native aplikaciji (nema servera; izbjegava cache probleme).
 }
