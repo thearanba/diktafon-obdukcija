@@ -429,6 +429,104 @@ function buildUvidjajSwitch() {
   return wrap;
 }
 
+// Dugmad ispod polja okolnosti/uviđaja: 🎤 diktiranje (Groq) + ✨ Doradi (Claude cleanup).
+function buildOkolnostiControls() {
+  const wrap = document.createElement("div");
+  wrap.className = "dict-controls okolnosti-controls";
+  wrap.innerHTML = `
+    <button type="button" id="okolnosti-mic" class="btn-mic">🎤 Diktiraj</button>
+    <button type="button" id="okolnosti-cleanup" class="btn-cleanup">✨ Doradi (Claude)</button>`;
+  return wrap;
+}
+
+function setOkolnostiMicState(btn, state) {
+  if (!btn) return;
+  btn.classList.remove("recording", "processing");
+  if (state === "recording") { btn.classList.add("recording"); btn.textContent = "⏹ Zaustavi"; }
+  else if (state === "processing") { btn.classList.add("processing"); btn.textContent = "⏳ Obrađujem..."; }
+  else { btn.textContent = "🎤 Diktiraj"; }
+}
+
+function appendToOkolnosti(text) {
+  if (!text) return;
+  const ta = document.querySelector('textarea[data-header-id="okolnosti"]');
+  const cur = (STATE.header.okolnosti || "").trim();
+  STATE.header.okolnosti = cur ? cur + " " + text.trim() : text.trim();
+  if (ta) { ta.value = STATE.header.okolnosti; ta.scrollTop = ta.scrollHeight; }
+  updateHeaderSummary();
+  autoSave();
+}
+
+async function toggleOkolnostiMic(btn) {
+  // Ako već snima — zaustavi
+  if (STATE.recording && STATE.recording.okolnosti) {
+    if (STATE.recording.mediaRecorder) STATE.recording.mediaRecorder.stop();
+    return;
+  }
+  if (!STATE.config.stt_options.includes("groq")) {
+    toast("Groq nije konfigurisan (Postavke).", "error");
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      STATE.recording = null;
+      setOkolnostiMicState(btn, "processing");
+      try {
+        const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+        const fd = new FormData();
+        fd.append("audio", blob, "audio.webm");
+        fd.append("section_id", "okolnosti");
+        const res = await api("/api/transcribe", { method: "POST", body: fd });
+        appendToOkolnosti(res.text);
+        toast("Transkripcija ✓", "success");
+      } catch (err) {
+        toast("Transkripcija greška: " + err.message, "error");
+      } finally {
+        setOkolnostiMicState(btn, "idle");
+      }
+    };
+    mr.start();
+    STATE.recording = { okolnosti: true, mediaRecorder: mr, chunks };
+    setOkolnostiMicState(btn, "recording");
+  } catch (err) {
+    toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
+    console.error(err);
+  }
+}
+
+async function cleanupOkolnosti(btn) {
+  if (!STATE.config.claude_available) { toast("Claude nije konfigurisan", "error"); return; }
+  const text = (STATE.header.okolnosti || "").trim();
+  if (!text) { toast("Nema teksta za doradu"); return; }
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "⏳ Dorađujem...";
+  try {
+    const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
+    const res = await api("/api/cleanup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, section_title: label }),
+    });
+    STATE.header.okolnosti = (res.text || "").trim();
+    const ta = document.querySelector('textarea[data-header-id="okolnosti"]');
+    if (ta) ta.value = STATE.header.okolnosti;
+    updateHeaderSummary();
+    autoSave();
+    toast("Dorađeno ✓", "success");
+  } catch (err) {
+    toast("Greška: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
 // === Render: header form ===
 function renderHeaderForm() {
   const body = $("#header-body");
@@ -504,6 +602,10 @@ function renderHeaderForm() {
     if (f.id === "okolnosti_label") {
       body.appendChild(buildUvidjajSwitch());
     }
+    // 🎤 Diktiraj (Groq) + ✨ Doradi (Claude) ispod polja okolnosti/uviđaja
+    if (f.id === "okolnosti") {
+      body.appendChild(buildOkolnostiControls());
+    }
   }
 
   // Bind input events
@@ -543,6 +645,12 @@ function renderHeaderForm() {
         : "Uviđaj isključen — okolnosti se popunjavaju iz naredbe", "success");
     });
   }
+
+  // Okolnosti/uviđaj: 🎤 Diktiraj (Groq) + ✨ Doradi (Claude cleanup)
+  const okMic = body.querySelector("#okolnosti-mic");
+  if (okMic) okMic.addEventListener("click", () => toggleOkolnostiMic(okMic));
+  const okClean = body.querySelector("#okolnosti-cleanup");
+  if (okClean) okClean.addEventListener("click", () => cleanupOkolnosti(okClean));
 
   // Extract naredba — dugme i file input
   const btnExtract = $("#btn-extract-naredba");
