@@ -534,6 +534,81 @@ async function sazmiIzuzeti(btn) {
   }
 }
 
+function countIzuzetiSelected() {
+  let n = 0;
+  for (const g of IZUZETI_GROUPS) n += izuzetiCollect(g).length;
+  return n;
+}
+
+// Kompaktno dugme u zaglavlju — otvara check-listu u fokus-prozoru
+function buildIzuzetiOpener() {
+  izuzetiInitState();
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const n = countIzuzetiSelected();
+  wrap.innerHTML = `
+    <button type="button" class="btn-izuzeti-open" id="btn-izuzeti-open">
+      <span>🧪 Izuzeti uzorci</span>
+      <span class="izuzeti-count">${n} izabrano ›</span>
+    </button>`;
+  return wrap;
+}
+
+function bindIzuzetiEvents(scope) {
+  scope.querySelectorAll("[data-izuzeti-item]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      STATE.header.izuzeti_checked[cb.dataset.izuzetiItem] = cb.checked;
+      refreshIzuzetiPreview();
+    });
+  });
+  scope.querySelectorAll("[data-izuzeti-manual]").forEach(inp => {
+    inp.addEventListener("input", () => {
+      STATE.header.izuzeti_manual[inp.dataset.izuzetiManual] = inp.value;
+      refreshIzuzetiPreview();
+    });
+  });
+  const sazmiBtn = scope.querySelector("#btn-izuzeti-sazmi");
+  if (sazmiBtn) sazmiBtn.addEventListener("click", () => sazmiIzuzeti(sazmiBtn));
+  const pv = scope.querySelector("#izuzeti-preview");
+  if (pv) {
+    pv.addEventListener("input", () => {
+      STATE.header.izuzeti_uzorci = pv.value;
+      autoGrow(pv);
+      autoSave();
+    });
+    autoGrow(pv);
+  }
+}
+
+function openIzuzetiOverlay() {
+  closeIzuzetiOverlay();
+  const ov = document.createElement("div");
+  ov.className = "fs-overlay";
+  ov.id = "izuzeti-overlay";
+  ov.innerHTML = `
+    <div class="fs-overlay-header">
+      <span class="fs-overlay-title">🧪 Izuzeti uzorci</span>
+      <button class="fs-overlay-close" id="izuzeti-close">✕</button>
+    </div>`;
+  const obody = document.createElement("div");
+  obody.className = "fs-overlay-body";
+  obody.appendChild(buildIzuzetiChecklist({ label: "" }));
+  ov.appendChild(obody);
+  document.body.appendChild(ov);
+  document.body.classList.add("has-fullscreen");
+  bindIzuzetiEvents(ov);
+  const closeBtn = ov.querySelector("#izuzeti-close");
+  if (closeBtn) closeBtn.addEventListener("click", closeIzuzetiOverlay);
+}
+
+function closeIzuzetiOverlay() {
+  const ov = document.getElementById("izuzeti-overlay");
+  if (ov) ov.remove();
+  document.body.classList.remove("has-fullscreen");
+  const cnt = document.querySelector("#btn-izuzeti-open .izuzeti-count");
+  if (cnt) cnt.textContent = countIzuzetiSelected() + " izabrano ›";
+}
+
 // Switch "Uviđaj": ručni prelaz između (a) okolnosti iz naredbe (Claude popunjava) i
 // (b) ličnog uviđaja (ti diktiraš/upisuješ — Auto-popuni NE smije prebrisati).
 function buildUvidjajSwitch() {
@@ -672,9 +747,9 @@ function renderHeaderForm() {
   body.appendChild(extractDiv);
 
   for (const f of STATE.config.header_fields) {
-    // Izuzeti uzorci → check-lista umjesto običnog textarea
+    // Izuzeti uzorci → kompaktno dugme koje otvara check-listu u fokus-prozoru
     if (f.id === "izuzeti_uzorci") {
-      body.appendChild(buildIzuzetiChecklist(f));
+      body.appendChild(buildIzuzetiOpener());
       continue;
     }
     const wrap = document.createElement("div");
@@ -784,21 +859,9 @@ function renderHeaderForm() {
   const okClean = body.querySelector("#okolnosti-cleanup");
   if (okClean) okClean.addEventListener("click", () => cleanupOkolnosti(okClean));
 
-  // Izuzeti uzorci — checkboxovi, ručni unos, Sažmi (Claude)
-  body.querySelectorAll("[data-izuzeti-item]").forEach(cb => {
-    cb.addEventListener("change", () => {
-      STATE.header.izuzeti_checked[cb.dataset.izuzetiItem] = cb.checked;
-      refreshIzuzetiPreview();
-    });
-  });
-  body.querySelectorAll("[data-izuzeti-manual]").forEach(inp => {
-    inp.addEventListener("input", () => {
-      STATE.header.izuzeti_manual[inp.dataset.izuzetiManual] = inp.value;
-      refreshIzuzetiPreview();
-    });
-  });
-  const sazmiBtn = body.querySelector("#btn-izuzeti-sazmi");
-  if (sazmiBtn) sazmiBtn.addEventListener("click", () => sazmiIzuzeti(sazmiBtn));
+  // Izuzeti uzorci — dugme koje otvara fokus-prozor sa check-listom
+  const izOpen = body.querySelector("#btn-izuzeti-open");
+  if (izOpen) izOpen.addEventListener("click", openIzuzetiOverlay);
 
   // Extract naredba — dvije direktne ikone (kamera / fajl), bez među-izbornika
   const camBtn = $("#btn-naredba-camera");

@@ -660,6 +660,55 @@ body.has-fullscreen { overflow: hidden; }
 }
 #btn-izuzeti-sazmi { width: 100%; margin-top: 2px; }
 
+/* Kompaktno dugme „Izuzeti uzorci" u zaglavlju */
+.btn-izuzeti-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.btn-izuzeti-open:hover, .btn-izuzeti-open:active { background: var(--border); }
+.izuzeti-count { color: var(--primary); font-size: 13px; font-weight: 600; }
+
+/* Fokus-prozor (fullscreen overlay) — npr. za Izuzete uzorke */
+.fs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--bg);
+  overflow-y: auto;
+}
+.fs-overlay-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+}
+.fs-overlay-title { font-weight: 700; font-size: 16px; }
+.fs-overlay-close {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 22px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+}
+.fs-overlay-body { padding: 14px 14px 40vh 14px; }
+
 /* Switch "Uviđaj" (naredba ↔ lični uviđaj) */
 .uvidjaj-switch {
   display: flex;
