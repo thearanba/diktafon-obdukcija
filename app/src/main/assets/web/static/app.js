@@ -1473,9 +1473,14 @@ function selectFocusItem(idx) {
   if (!sid) return;
   const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
   if (!card) return;
+  let target = null;
   card.querySelectorAll(".item-card").forEach(ic => {
-    ic.classList.toggle("selected", parseInt(ic.dataset.itemIdx, 10) === idx);
+    const sel = parseInt(ic.dataset.itemIdx, 10) === idx;
+    ic.classList.toggle("selected", sel);
+    if (sel) target = ic;
   });
+  // Izabrana stavka ide na vrh vidljivog dijela
+  if (target) setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "start" }), 20);
 }
 
 function focusMic() {
@@ -1486,6 +1491,9 @@ function focusMic() {
     let idx = STATE.focusItemIdx;
     if (idx == null || !getItem(sid, idx)) idx = 0;
     selectFocusItem(idx);
+    // Prebaci tu stavku na "Diktat" da se vidi šta se diktira
+    const ic = document.querySelector(`.item-card[data-item-section="${sid}"][data-item-idx="${idx}"]`);
+    if (ic) switchTab(ic, "raw");
     toggleItemRecording(sid, idx);
   } else {
     const card = document.querySelector(`section.card[data-section-id="${sid}"]`);

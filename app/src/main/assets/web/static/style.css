@@ -907,6 +907,7 @@ body.has-fullscreen { overflow: hidden; }
   padding: 12px;
   position: relative;
   cursor: pointer;
+  scroll-margin-top: 60px;  /* da izabrana stavka ne zađe pod sticky naslov */
 }
 /* Selektovana (aktivna) stavka — donja traka radi nad njom */
 .item-card.selected {
