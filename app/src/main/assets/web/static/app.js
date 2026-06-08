@@ -425,15 +425,20 @@ const DEFAULT_IZUZETI_SENTENCE = "Tokom obdukcije izuzeti uzorci: papilarnih lin
   "uzorak krvi za DNA te uzorci krvi, očne vodice, urina, žući i želučanog sadržaja za " +
   "analizu na alkohol i psihoaktivne supstance. Svi uzorci predani krim-tehničaru na dalje postupanje.";
 
+const DEFAULT_IZUZETI_CHECKED = {
+  "papilarne linije": true, "uzorak krvi za DNA": true,
+  "krv": true, "urin": true,
+  "očna vodica": true, "žuč": true, "želučani sadržaj": true,
+};
 function izuzetiInitState() {
-  if (!STATE.header.izuzeti_checked) {
-    STATE.header.izuzeti_checked = {
-      "papilarne linije": true, "uzorak krvi za DNA": true,
-      "krv": true, "urin": true,
-      "očna vodica": true, "žuč": true, "želučani sadržaj": true,
-    };
-  }
+  if (!STATE.header.izuzeti_checked) STATE.header.izuzeti_checked = { ...DEFAULT_IZUZETI_CHECKED };
   if (!STATE.header.izuzeti_manual) STATE.header.izuzeti_manual = {};
+}
+// Eksplicitan reset na svježe default-e (za novi/očišćen draft)
+function izuzetiResetDefaults() {
+  STATE.header.izuzeti_checked = { ...DEFAULT_IZUZETI_CHECKED };
+  STATE.header.izuzeti_manual = {};
+  STATE.header.izuzeti_uzorci = "";
 }
 
 function izuzetiCollect(g) {
@@ -1084,6 +1089,15 @@ function bindSectionEvents() {
     ic.addEventListener("click", (e) => {
       if (e.target.closest("[data-remove-item]")) return;  // ✕ ne selektuje
       selectFocusItem(parseInt(ic.dataset.itemIdx, 10));
+    });
+  });
+
+  // Fokus u textarea (klik na tekst) → pomjeri stavku/sekciju na vrh nakon što se otvori
+  // tastatura, da ima prostora za kucanje (block:start + scroll-margin ispod naslova).
+  container.querySelectorAll(".dict-textarea").forEach(ta => {
+    ta.addEventListener("focus", () => {
+      const scope = ta.closest(".item-card") || ta;
+      setTimeout(() => scope.scrollIntoView({ behavior: "smooth", block: "start" }), 350);
     });
   });
 
@@ -2011,6 +2025,7 @@ async function switchToDraft(id) {
   STATE.sections = data.sections || {};
   STATE.lastKnownServerTs = data.updatedAt || 0;
   migrateSectionState();
+  closeIzuzetiOverlay();
   renderHeaderForm();
   renderSections();
   updateDraftIndicator();
@@ -2029,9 +2044,12 @@ function newDraft() {
   STATE.currentDraftId = id;
   STATE.header = {};
   STATE.sections = {};
+  izuzetiResetDefaults();      // resetuj izuzete uzorke na default
+  closeIzuzetiOverlay();       // zatvori prozor ako je otvoren
   renderHeaderForm();
   renderSections();
   updateDraftIndicator();
+  autoSave();
   toast("Novi draft kreiran ✓", "success");
 }
 
@@ -2039,6 +2057,8 @@ function clearCurrent() {
   if (!confirm("Obrisati sav sadržaj trenutnog drafta? (Sami draft ostaje u listi, samo ga prazniš.)")) return;
   STATE.header = {};
   STATE.sections = {};
+  izuzetiResetDefaults();
+  closeIzuzetiOverlay();
   renderHeaderForm();
   renderSections();
   autoSave();

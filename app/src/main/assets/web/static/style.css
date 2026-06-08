@@ -858,6 +858,7 @@ body.has-fullscreen { overflow: hidden; }
   font-family: inherit;
   resize: vertical;
   line-height: 1.5;
+  scroll-margin-top: 60px;
 }
 .dict-textarea.raw {
   background: #1a2436;
