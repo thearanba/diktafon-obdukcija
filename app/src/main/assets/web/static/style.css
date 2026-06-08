@@ -618,39 +618,47 @@ body.has-fullscreen { overflow: hidden; }
   font-style: italic;
 }
 
-/* Izuzeti uzorci — check-lista (3 grupe) */
+/* Izuzeti uzorci — kompaktna check-lista (chip stil, prelama se) */
 .izuzeti-group {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
+  padding: 9px 10px;
+  margin-bottom: 8px;
 }
 .izuzeti-gtitle {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--primary);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   margin-bottom: 8px;
 }
-.izuzeti-items { display: flex; flex-direction: column; gap: 9px; }
+.izuzeti-items { display: flex; flex-wrap: wrap; gap: 7px; }
 .izuzeti-chk {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 6px 11px;
+  font-size: 13px;
   cursor: pointer;
 }
 .izuzeti-chk input {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
   accent-color: var(--primary);
 }
+.izuzeti-chk:has(input:checked) {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: var(--primary);
+}
 .izuzeti-manual {
   width: 100%;
-  margin-top: 9px;
+  margin-top: 8px;
   padding: 8px 10px;
   border-radius: 7px;
   border: 1px solid var(--border);
@@ -658,7 +666,9 @@ body.has-fullscreen { overflow: hidden; }
   color: var(--text);
   font-size: 13px;
 }
-#btn-izuzeti-sazmi { width: 100%; margin-top: 2px; }
+#btn-izuzeti-sazmi { width: 100%; margin-top: 4px; }
+/* Razmak: odvoji „Izuzeti uzorci" dugme od gornjih kontrola (Diktiraj/Doradi) */
+.izuzeti-opener-field { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px; }
 
 /* Kompaktno dugme „Izuzeti uzorci" u zaglavlju */
 .btn-izuzeti-open {

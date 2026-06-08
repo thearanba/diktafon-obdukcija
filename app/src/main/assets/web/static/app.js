@@ -413,7 +413,7 @@ function setStatus(text, level = "") {
 // === Izuzeti uzorci — check-lista (3 grupe) + ručni unos + Claude sažimanje ===
 const IZUZETI_GROUPS = [
   { id: "g0", title: "Daktiloskopija / mikrotragovi / dlake / nokti", manual: true,
-    items: ["papilarne linije", "mikro tragovi lica", "mikro tragovi odjeće",
+    items: ["papilarne linije", "uzorak krvi za DNA", "mikro tragovi lica", "mikro tragovi odjeće",
             "mikro tragovi obje šake", "kose tjemenog dijela", "kose čeone regije",
             "dlake stidne regije", "nokti sa obje šake"] },
   { id: "g1", title: "Toksikologija", manual: false,
@@ -428,7 +428,8 @@ const DEFAULT_IZUZETI_SENTENCE = "Tokom obdukcije izuzeti uzorci: papilarnih lin
 function izuzetiInitState() {
   if (!STATE.header.izuzeti_checked) {
     STATE.header.izuzeti_checked = {
-      "papilarne linije": true, "krv": true, "urin": true,
+      "papilarne linije": true, "uzorak krvi za DNA": true,
+      "krv": true, "urin": true,
       "očna vodica": true, "žuč": true, "želučani sadržaj": true,
     };
   }
@@ -502,23 +503,17 @@ function refreshIzuzetiPreview() {
 
 async function sazmiIzuzeti(btn) {
   if (!STATE.config.claude_available) { toast("Claude nije konfigurisan", "error"); return; }
-  const selected = izuzetiSelectedText();
-  if (!selected.trim()) { toast("Nijedan uzorak nije izabran"); return; }
+  // SAMO izabrano (deterministički), pa Claude SREDI (ne dodaje ništa — npr. ne dodaje DNA sam)
+  const composed = composeIzuzeti();
+  if (!composed.trim()) { toast("Nijedan uzorak nije izabran"); return; }
   const old = btn.textContent;
   btn.disabled = true;
   btn.textContent = "⏳ Sažimam...";
   try {
-    const res = await api("/api/merge", {
+    const res = await api("/api/cleanup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        raw_dictation: selected,
-        section_id: "izuzeti_uzorci",
-        section_title: "Izuzeti uzorci",
-        template_text: DEFAULT_IZUZETI_SENTENCE,
-        is_multi: false,
-        hint: "Sastavi standardni paragraf izuzetih uzoraka u zapisniku, bez izmišljanja.",
-      }),
+      body: JSON.stringify({ text: composed, section_title: "Izuzeti uzorci" }),
     });
     STATE.header.izuzeti_uzorci = (res.text || "").trim();
     const pv = $("#izuzeti-preview");
@@ -544,7 +539,7 @@ function countIzuzetiSelected() {
 function buildIzuzetiOpener() {
   izuzetiInitState();
   const wrap = document.createElement("div");
-  wrap.className = "field";
+  wrap.className = "field izuzeti-opener-field";
   const n = countIzuzetiSelected();
   wrap.innerHTML = `
     <button type="button" class="btn-izuzeti-open" id="btn-izuzeti-open">
