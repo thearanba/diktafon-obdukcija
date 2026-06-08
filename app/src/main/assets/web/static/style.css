@@ -126,6 +126,9 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 240px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
 }
 #save-status-dot {
   display: inline-block;
@@ -450,8 +453,12 @@ html, body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-/* U fokusu: gornje kontrole „Diktat" pane-a (Diktiraj/Spoji/Obriši) idu dolje uz mikrofon */
-.card.fullscreen .tab-pane[data-pane="raw"] .dict-controls { display: none; }
+/* U fokusu: gornje kontrole „Diktat" pane-a (Diktiraj/Spoji/Obriši) idu dolje uz mikrofon.
+   SAMO sekcijski pane (direktno dijete card-body) — kontrole STAVKI (item-card) ostaju. */
+.card.fullscreen > .card-body > .tab-pane[data-pane="raw"] .dict-controls { display: none; }
+/* Tabovi unutar stavke malo kompaktniji */
+.item-card .seg-tabs { margin-bottom: 8px; }
+.item-card .seg-tab { padding: 7px 8px; font-size: 13px; }
 /* prostor na dnu da posljednje polje ne ostane iza tastature + donje trake */
 .card.fullscreen .card-body { padding-bottom: 52vh; }
 body.has-fullscreen { overflow: hidden; }

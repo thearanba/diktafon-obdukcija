@@ -837,18 +837,29 @@ function renderItem(s, idx, item) {
         <button class="btn-item-remove" data-remove-item="${s.id}" data-remove-idx="${idx}"
           title="Obriši stavku">✕</button>
       </div>
-      <textarea class="dict-textarea raw item-raw" data-item-target="raw"
-        data-item-section="${s.id}" data-item-idx="${idx}"
-        placeholder="${escapeAttr(placeholderRaw)}">${escapeHtml(item.raw || '')}</textarea>
-      <div class="dict-controls">
-        <button class="btn-mic" data-item-mic="${s.id}" data-item-idx="${idx}">
-          🎤 <span class="mic-label">Diktiraj</span>
-        </button>
-        <button class="btn-merge" data-item-merge="${s.id}" data-item-idx="${idx}">🪄 Spoji</button>
+
+      <div class="seg-tabs">
+        <button class="seg-tab active" data-tab="raw">Diktat</button>
+        <button class="seg-tab" data-tab="final">Finalno</button>
       </div>
-      <textarea class="dict-textarea final item-final" data-item-target="final"
-        data-item-section="${s.id}" data-item-idx="${idx}"
-        placeholder="Spojen tekst stavke se pojavi ovdje.">${escapeHtml(item.final || '')}</textarea>
+
+      <div class="tab-pane" data-pane="raw">
+        <textarea class="dict-textarea raw item-raw" data-item-target="raw"
+          data-item-section="${s.id}" data-item-idx="${idx}"
+          placeholder="${escapeAttr(placeholderRaw)}">${escapeHtml(item.raw || '')}</textarea>
+        <div class="dict-controls">
+          <button class="btn-mic" data-item-mic="${s.id}" data-item-idx="${idx}">
+            🎤 <span class="mic-label">Diktiraj</span>
+          </button>
+          <button class="btn-merge" data-item-merge="${s.id}" data-item-idx="${idx}">🪄 Spoji</button>
+        </div>
+      </div>
+
+      <div class="tab-pane" data-pane="final" style="display:none;">
+        <textarea class="dict-textarea final item-final" data-item-target="final"
+          data-item-section="${s.id}" data-item-idx="${idx}"
+          placeholder="Spojen tekst stavke se pojavi ovdje.">${escapeHtml(item.final || '')}</textarea>
+      </div>
     </div>
   `;
 }
@@ -856,9 +867,10 @@ function renderItem(s, idx, item) {
 function bindSectionEvents() {
   const container = $("#sections-container");
 
-  // Tab switcher (Diktat | Finalno)
+  // Tab switcher (Diktat | Finalno) — scope: stavka (item-card) ili cijela sekcija (card)
   container.querySelectorAll(".seg-tab").forEach(tab => {
-    tab.addEventListener("click", () => switchTab(tab.closest(".card"), tab.dataset.tab));
+    tab.addEventListener("click", () =>
+      switchTab(tab.closest(".item-card") || tab.closest(".card"), tab.dataset.tab));
   });
 
   // Single section events
@@ -1399,6 +1411,11 @@ async function mergeItem(sectionId, itemIdx) {
       `textarea[data-item-section="${sectionId}"][data-item-idx="${itemIdx}"][data-item-target="final"]`
     );
     if (finalTa) { finalTa.value = item.final; autoGrow(finalTa); }
+    // Prebaci tu stavku na "Finalno" tab
+    const _ic = document.querySelector(
+      `.item-card[data-item-section="${sectionId}"][data-item-idx="${itemIdx}"]`
+    );
+    if (_ic) switchTab(_ic, "final");
     updateSectionStatus(sectionId);
     autoSave();
     toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out})`, "success");
@@ -1886,7 +1903,7 @@ function updateDraftIndicator() {
   if (!ind) return;
   const id = STATE.currentDraftId || getCurrentDraftId();
   if (!id) {
-    ind.textContent = "(nema drafta)";
+    ind.textContent = "(nema otvorenog nalaza)";
     ind.classList.add("dim");
     return;
   }
