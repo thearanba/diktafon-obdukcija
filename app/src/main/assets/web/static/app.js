@@ -1112,16 +1112,21 @@ document.addEventListener("click", e => {
   if (!header) return;
   const card = header.closest(".collapsible");
   if (!card) return;
-  if (card.classList.contains("fullscreen")) return;  // u fokusu klik na naslov ne zatvara
+  if (card.classList.contains("fullscreen")) return;  // u fokusu klik na naslov ne radi ništa
+  const sid = card.dataset.sectionId;
+  if (sid) {
+    // Sekcija za diktiranje → klik DIREKTNO otvara fokus (cijeli ekran)
+    enterFocus(sid);
+    return;
+  }
+  // Zaglavlje (nema section-id) → akordeon u listi
   const willOpen = !card.classList.contains("open");
   if (willOpen) {
-    // Akordeon: zatvori sve ostale otvorene kartice
     document.querySelectorAll(".card.collapsible.open").forEach(c => {
       if (c !== card) c.classList.remove("open");
     });
     card.classList.add("open");
     autoGrowIn(card);
-    // Skrolaj otvorenu sekciju na vrh vidljivog dijela
     setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   } else {
     card.classList.remove("open");
@@ -1178,7 +1183,7 @@ function enterFocus(sid) {
 
 function exitFocus() {
   document.querySelectorAll(".card.fullscreen").forEach(c => {
-    c.classList.remove("fullscreen");
+    c.classList.remove("fullscreen", "open");  // izlaz iz fokusa → sekcija skupljena u listi
     const b = c.querySelector("[data-focus]");
     if (b) b.textContent = "⛶";
   });
