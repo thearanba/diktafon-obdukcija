@@ -446,6 +446,74 @@ html, body {
 .card.fullscreen .card-body { padding-bottom: 45vh; }
 body.has-fullscreen { overflow: hidden; }
 
+/* Tabovi: Diktat | Finalno */
+.seg-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 3px;
+  margin-bottom: 12px;
+}
+.seg-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 9px 8px;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg-tab.active { background: var(--primary); color: #fff; }
+
+/* Fokus-kokpit: donja traka (← / 🎤 / →) */
+.focus-nav {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 300;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 14px rgba(0,0,0,0.4);
+}
+.focus-nav.show { display: flex; }
+.focus-side {
+  flex: 1;
+  max-width: 38%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 12px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.focus-side:disabled { opacity: 0.35; }
+.focus-mic {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+  color: #fff;
+  font-size: 26px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+}
+.focus-mic.recording { background: var(--danger); animation: pulse 1.2s infinite; }
+
 /* Status oznake u headerima sekcija */
 .section-status {
   display: inline-block;

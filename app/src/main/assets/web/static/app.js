@@ -728,6 +728,7 @@ function autoGrowIn(el) {
 }
 
 function renderSections() {
+  if (typeof exitFocus === "function") exitFocus();  // resetuj fokus pri punom renderu
   const container = $("#sections-container");
   container.innerHTML = "";
   for (const s of STATE.config.sections) {
@@ -764,30 +765,37 @@ function renderSingleBody(s) {
   return `
     <div class="card-body">
       <button class="btn-focus" data-focus>⛶ Cijeli ekran</button>
-      ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
-      ${templateText ? `
-        <button class="dict-default-toggle" data-show-default>📋 Prikaži pun template paragraf</button>
-        <div class="dict-default" data-default-text style="display:none;">${escapeHtml(templateText)}</div>
-      ` : ''}
 
-      <label class="field-label">Sirova diktacija (kratko, neformalno):</label>
-      <textarea class="dict-textarea raw" data-section-id="${s.id}" data-target="raw"
-        placeholder="${escapeAttr(placeholderText)}">${escapeHtml(sec.raw || '')}</textarea>
-      <div class="dict-controls">
-        <button class="btn-mic" data-mic="${s.id}" data-target="raw">
-          🎤 <span class="mic-label">Diktiraj</span>
-        </button>
-        <button class="btn-merge" data-merge="${s.id}">🪄 Spoji</button>
-        <button class="btn-clear-section" data-clear-raw="${s.id}">✕ Obriši</button>
+      <div class="seg-tabs">
+        <button class="seg-tab active" data-tab="raw">Diktat</button>
+        <button class="seg-tab" data-tab="final">Finalno</button>
       </div>
 
-      <label class="field-label" style="margin-top:14px;">Finalni tekst (ide u zapisnik):</label>
-      <textarea class="dict-textarea final" data-section-id="${s.id}" data-target="final"
-        placeholder="Ovdje će se pojaviti spojen tekst nakon klika na 🪄 Spoji.">${escapeHtml(sec.final || '')}</textarea>
-      <div class="dict-controls final-controls">
-        <button class="btn-cleanup" data-cleanup="${s.id}">✨ Doradi</button>
-        ${templateText ? `<button class="btn-use-default" data-use-default="${s.id}">↺ Vrati template</button>` : ''}
-        <button class="btn-clear-section" data-clear-final="${s.id}">✕ Obriši finalni</button>
+      <div class="tab-pane" data-pane="raw">
+        ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
+        ${templateText ? `
+          <button class="dict-default-toggle" data-show-default>📋 Prikaži pun template paragraf</button>
+          <div class="dict-default" data-default-text style="display:none;">${escapeHtml(templateText)}</div>
+        ` : ''}
+        <textarea class="dict-textarea raw" data-section-id="${s.id}" data-target="raw"
+          placeholder="${escapeAttr(placeholderText)}">${escapeHtml(sec.raw || '')}</textarea>
+        <div class="dict-controls">
+          <button class="btn-mic" data-mic="${s.id}" data-target="raw">
+            🎤 <span class="mic-label">Diktiraj</span>
+          </button>
+          <button class="btn-merge" data-merge="${s.id}">🪄 Spoji</button>
+          <button class="btn-clear-section" data-clear-raw="${s.id}">✕ Obriši</button>
+        </div>
+      </div>
+
+      <div class="tab-pane" data-pane="final" style="display:none;">
+        <textarea class="dict-textarea final" data-section-id="${s.id}" data-target="final"
+          placeholder="Ovdje će se pojaviti spojen tekst nakon klika na 🪄 Spoji.">${escapeHtml(sec.final || '')}</textarea>
+        <div class="dict-controls final-controls">
+          <button class="btn-cleanup" data-cleanup="${s.id}">✨ Doradi</button>
+          ${templateText ? `<button class="btn-use-default" data-use-default="${s.id}">↺ Vrati template</button>` : ''}
+          <button class="btn-clear-section" data-clear-final="${s.id}">✕ Obriši finalni</button>
+        </div>
       </div>
     </div>
   `;
@@ -847,6 +855,11 @@ function renderItem(s, idx, item) {
 
 function bindSectionEvents() {
   const container = $("#sections-container");
+
+  // Tab switcher (Diktat | Finalno)
+  container.querySelectorAll(".seg-tab").forEach(tab => {
+    tab.addEventListener("click", () => switchTab(tab.closest(".card"), tab.dataset.tab));
+  });
 
   // Single section events
   container.querySelectorAll("[data-show-default]").forEach(btn => {
@@ -994,10 +1007,16 @@ function rerenderMultiBody(sid) {
   const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
   if (!card) return;
   const isOpen = card.classList.contains("open");
+  const isFs = card.classList.contains("fullscreen");
   const def = getSectionDef(sid);
   const headerHtml = card.querySelector(".card-header").outerHTML;
   card.innerHTML = headerHtml + renderMultiBody(def);
   if (isOpen) card.classList.add("open");
+  if (isFs) {
+    card.classList.add("fullscreen");
+    const fb = card.querySelector("[data-focus]");
+    if (fb) fb.textContent = "✕ Izađi iz fokusa";
+  }
   bindSectionEvents();
   updateSectionStatus(sid);
 }
@@ -1059,6 +1078,9 @@ async function mergeSection(sectionId) {
     sec.final = res.text;
     const finalTa = document.querySelector(`textarea[data-section-id="${sectionId}"][data-target="final"]`);
     if (finalTa) { finalTa.value = res.text; autoGrow(finalTa); }
+    // Nakon spajanja prebaci na "Finalno" tab (vidiš rezultat)
+    const _card = document.querySelector(`section.card[data-section-id="${sectionId}"]`);
+    if (_card) switchTab(_card, "final");
     updateSectionStatus(sectionId);
     autoSave();
     toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out} tokens)`, "success");
@@ -1070,33 +1092,144 @@ async function mergeSection(sectionId) {
   }
 }
 
-// === Collapsible cards ===
+// === Collapsible cards (AKORDEON — samo jedna otvorena) ===
 document.addEventListener("click", e => {
   const header = e.target.closest("[data-toggle]");
   if (!header) return;
   const card = header.closest(".collapsible");
   if (!card) return;
-  // U fokus-modu klik na zaglavlje ne zatvara karticu
-  if (card.classList.contains("fullscreen")) return;
-  const opened = card.classList.toggle("open");
-  if (opened) autoGrowIn(card);  // visina textarea-a prema sadržaju kad postanu vidljive
+  if (card.classList.contains("fullscreen")) return;  // u fokusu klik na naslov ne zatvara
+  const willOpen = !card.classList.contains("open");
+  if (willOpen) {
+    // Akordeon: zatvori sve ostale otvorene kartice
+    document.querySelectorAll(".card.collapsible.open").forEach(c => {
+      if (c !== card) c.classList.remove("open");
+    });
+    card.classList.add("open");
+    autoGrowIn(card);
+  } else {
+    card.classList.remove("open");
+  }
 });
 
-// === Fokus (cijeli ekran) jedne sekcije ===
+// === Fokus-kokpit (sekcija preko cijelog ekrana + ← → + mikrofon dole) ===
 document.addEventListener("click", e => {
   const fb = e.target.closest("[data-focus]");
   if (!fb) return;
   const card = fb.closest(".card");
   if (!card) return;
-  card.classList.add("open");  // mora biti otvorena da se vidi sadržaj
-  const nowFs = card.classList.toggle("fullscreen");
-  document.body.classList.toggle("has-fullscreen", nowFs);
-  fb.textContent = nowFs ? "✕ Izađi iz fokusa" : "⛶ Cijeli ekran";
-  if (nowFs) {
-    autoGrowIn(card);
-    card.scrollTop = 0;
-  }
+  if (card.classList.contains("fullscreen")) exitFocus();
+  else enterFocus(card.dataset.sectionId);
 });
+
+function shortTitle(t) {
+  if (!t) return "";
+  const cut = t.indexOf("(");
+  let s = (cut > 0 ? t.slice(0, cut) : t).trim();
+  if (s.length > 16) s = s.slice(0, 15) + "…";
+  return s;
+}
+
+function enterFocus(sid) {
+  // zatvori sve, otvori+fokusiraj ovu
+  document.querySelectorAll(".card.collapsible.open").forEach(c => c.classList.remove("open"));
+  document.querySelectorAll(".card.fullscreen").forEach(c => {
+    c.classList.remove("fullscreen");
+    const b = c.querySelector("[data-focus]");
+    if (b) b.textContent = "⛶ Cijeli ekran";
+  });
+  const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
+  if (!card) return;
+  card.classList.add("open", "fullscreen");
+  const fb = card.querySelector("[data-focus]");
+  if (fb) fb.textContent = "✕ Izađi iz fokusa";
+  STATE.focusSectionId = sid;
+  document.body.classList.add("has-fullscreen");
+  const fnav = document.getElementById("focus-nav");
+  if (fnav) fnav.classList.add("show");
+  updateFocusNav();
+  updateFocusMic();
+  autoGrowIn(card);
+  card.scrollTop = 0;
+}
+
+function exitFocus() {
+  document.querySelectorAll(".card.fullscreen").forEach(c => {
+    c.classList.remove("fullscreen");
+    const b = c.querySelector("[data-focus]");
+    if (b) b.textContent = "⛶ Cijeli ekran";
+  });
+  STATE.focusSectionId = null;
+  document.body.classList.remove("has-fullscreen");
+  const fnav = document.getElementById("focus-nav");
+  if (fnav) fnav.classList.remove("show");
+}
+
+function focusGo(dir) {
+  const ids = (STATE.config.sections || []).map(s => s.id);
+  const i = ids.indexOf(STATE.focusSectionId);
+  if (i < 0) return;
+  const ni = i + dir;
+  if (ni < 0 || ni >= ids.length) return;
+  enterFocus(ids[ni]);
+}
+
+function updateFocusNav() {
+  const secs = STATE.config.sections || [];
+  const i = secs.findIndex(s => s.id === STATE.focusSectionId);
+  const prev = document.getElementById("focus-prev");
+  const next = document.getElementById("focus-next");
+  if (prev) {
+    const has = i > 0;
+    prev.disabled = !has;
+    prev.textContent = has ? "← " + shortTitle(secs[i - 1].title) : "←";
+  }
+  if (next) {
+    const has = i >= 0 && i < secs.length - 1;
+    next.disabled = !has;
+    next.textContent = has ? shortTitle(secs[i + 1].title) + " →" : "→";
+  }
+}
+
+function updateFocusMic() {
+  const fm = document.getElementById("focus-mic");
+  if (!fm) return;
+  const rec = !!STATE.recording;
+  fm.classList.toggle("recording", rec);
+  fm.textContent = rec ? "⏹" : "🎤";
+}
+
+function focusMic() {
+  const sid = STATE.focusSectionId;
+  if (!sid) return;
+  const sdef = (STATE.config.sections || []).find(s => s.id === sid);
+  if (sdef && sdef.multi) {
+    const sec = getSection(sid);
+    const items = sec.items || [];
+    let idx = items.length - 1;
+    const last = items[idx];
+    if (idx < 0 || ((last && (last.raw || last.final || "")).trim())) {
+      addItem(sid);
+      rerenderMultiBody(sid);
+      idx = getSection(sid).items.length - 1;
+    }
+    toggleItemRecording(sid, idx);
+  } else {
+    const card = document.querySelector(`section.card[data-section-id="${sid}"]`);
+    if (card) switchTab(card, "raw");
+    toggleRecording(sid, "raw");
+  }
+}
+
+function switchTab(card, which) {
+  if (!card) return;
+  card.querySelectorAll(".seg-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === which));
+  card.querySelectorAll(".tab-pane").forEach(p => {
+    p.style.display = p.dataset.pane === which ? "block" : "none";
+  });
+  const pane = card.querySelector(`.tab-pane[data-pane="${which}"]`);
+  if (pane) autoGrowIn(pane);
+}
 
 // === Recording (single section) ===
 async function toggleRecording(sectionId, target = "raw") {
@@ -1171,6 +1304,7 @@ async function processGroqItemRecording(sectionId, itemIdx, chunks, mimeType) {
 }
 
 function updateItemMicState(sectionId, itemIdx, state) {
+  updateFocusMic();
   const btn = document.querySelector(`[data-item-mic="${sectionId}"][data-item-idx="${itemIdx}"]`);
   if (!btn) return;
   btn.classList.remove("recording", "processing", "preparing");
@@ -1371,6 +1505,7 @@ function stopRecording() {
 }
 
 function updateMicButtonState(sectionId, state) {
+  updateFocusMic();
   const btn = document.querySelector(`[data-mic="${sectionId}"]`);
   if (!btn) return;
   btn.classList.remove("recording", "processing", "preparing");
@@ -1908,6 +2043,14 @@ async function init() {
       location.reload();
     });
   }
+
+  // Fokus-kokpit donja traka: ← prethodna / 🎤 / sljedeća →
+  const fPrev = $("#focus-prev");
+  const fNext = $("#focus-next");
+  const fMic = $("#focus-mic");
+  if (fPrev) fPrev.addEventListener("click", () => focusGo(-1));
+  if (fNext) fNext.addEventListener("click", () => focusGo(1));
+  if (fMic) fMic.addEventListener("click", focusMic);
 
   // Service worker se NE registruje u native aplikaciji (nema servera; izbjegava cache probleme).
 }
