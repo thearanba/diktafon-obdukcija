@@ -1061,6 +1061,7 @@ async function mergeSection(sectionId) {
   const oldLabel = btn.textContent;
   btn.textContent = "⏳ Spajam...";
   btn.disabled = true;
+  setFocusMergeWorking(true);  // vizuelni feedback i na kokpit dugmetu
   try {
     const res = await api("/api/merge", {
       method: "POST",
@@ -1089,6 +1090,7 @@ async function mergeSection(sectionId) {
   } finally {
     btn.textContent = oldLabel;
     btn.disabled = false;
+    setFocusMergeWorking(false);
   }
 }
 
@@ -1206,6 +1208,15 @@ function updateFocusMic() {
   const rec = !!STATE.recording;
   fm.classList.toggle("recording", rec);
   fm.textContent = rec ? "⏹" : "🎤";
+}
+
+// Vizuelni feedback na kokpit "Spoji" dok Claude radi (promjena boje + tekst)
+function setFocusMergeWorking(working) {
+  const b = document.getElementById("focus-merge");
+  if (!b) return;
+  b.classList.toggle("working", working);
+  b.disabled = working;
+  b.textContent = working ? "⏳ Spajam..." : "🪄 Spoji";
 }
 
 function focusMic() {

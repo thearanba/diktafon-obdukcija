@@ -21,20 +21,17 @@
     <button id="btn-menu" class="btn-menu" title="Meni" aria-label="Meni">⋮</button>
   </div>
   <div id="topbar-menu" class="topbar-menu">
+    <button id="btn-generate">📄 Generiši (.docx)</button>
+    <button id="btn-drafts">📂 Otvori draft</button>
+    <button id="btn-new-draft">🆕 Novi draft</button>
+    <button id="btn-clear" class="menu-danger">🗑 Reset</button>
+    <div class="menu-sep"></div>
     <button id="menu-settings">⚙ Postavke (API ključevi)</button>
     <button id="menu-reload">↻ Osvježi</button>
   </div>
 </header>
 
 <main id="app">
-  <!-- Action bar — gore (sigurno od slučajnog klika palcem dolje) -->
-  <div class="actions">
-    <button id="btn-generate" class="btn-primary">📄 <span class="btn-label">Generiši (.docx)</span></button>
-    <button id="btn-drafts" class="btn-secondary" title="Drafti"><span class="btn-icon">📂</span><span class="btn-label"> Drafti</span></button>
-    <button id="btn-new-draft" class="btn-secondary" title="Novi draft"><span class="btn-icon">🆕</span><span class="btn-label"> Novi</span></button>
-    <button id="btn-clear" class="btn-danger" title="Resetuj"><span class="btn-icon">🗑</span><span class="btn-label"> Reset</span></button>
-  </div>
-
   <!-- Sekcija: Zaglavlje -->
   <section class="card collapsible" id="header-card">
     <button class="card-header" data-toggle>

@@ -102,6 +102,8 @@ html, body {
   cursor: pointer;
 }
 .topbar-menu button:hover, .topbar-menu button:active { background: var(--border); }
+.topbar-menu .menu-danger { color: #fca5a5; }
+.topbar-menu .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
 .draft-indicator {
   display: flex;
@@ -534,6 +536,14 @@ body.has-fullscreen { overflow: hidden; }
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
 }
 .focus-mic.recording { background: var(--danger); animation: pulse 1.2s infinite; }
+/* "Spoji" dok Claude radi — jasna promjena boje (plava → amber) + spinner tekst */
+.focus-act.working {
+  background: var(--warn);
+  color: #1a1a1a;
+  border-color: var(--warn);
+}
+/* Taktilni feedback na dodir (potvrda klika) */
+.focus-act:active, .focus-side:active, .focus-mic:active { transform: scale(0.95); }
 
 /* Status oznake u headerima sekcija */
 .section-status {
