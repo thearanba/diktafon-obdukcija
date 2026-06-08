@@ -723,6 +723,19 @@ body.has-fullscreen { overflow: hidden; }
   cursor: pointer;
 }
 .fs-overlay-body { padding: 14px 14px 40vh 14px; }
+/* Okolnosti/Uviđaj prozor — donja traka (mikrofon + Doradi), kao kod sekcija */
+.okolnosti-actionbar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 14px rgba(0,0,0,0.4);
+}
+.okolnosti-actionbar .btn-mic,
+.okolnosti-actionbar .btn-cleanup { flex: 1; min-height: 48px; }
 
 /* Switch "Uviđaj" (naredba ↔ lični uviđaj) */
 .uvidjaj-switch {

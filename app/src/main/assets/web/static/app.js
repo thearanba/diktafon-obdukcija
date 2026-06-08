@@ -625,13 +625,95 @@ function buildUvidjajSwitch() {
 }
 
 // Dugmad ispod polja okolnosti/uviđaja: 🎤 diktiranje (Groq) + ✨ Doradi (Claude cleanup).
-function buildOkolnostiControls() {
+// === Okolnosti / Uviđaj — kompaktno dugme + fokus-prozor (jedna ćelija u zapisniku) ===
+function okolnostiSnippet() {
+  const txt = (STATE.header.okolnosti || "").trim();
+  return txt ? (txt.length > 42 ? txt.slice(0, 42) + "…" : txt) : "(prazno)";
+}
+function buildOkolnostiOpener() {
   const wrap = document.createElement("div");
-  wrap.className = "dict-controls okolnosti-controls";
+  wrap.className = "field";
+  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
   wrap.innerHTML = `
+    <button type="button" class="btn-izuzeti-open" id="btn-okolnosti-open">
+      <span>📋 ${escapeHtml(label)}</span>
+      <span class="izuzeti-count">${escapeHtml(okolnostiSnippet())} ›</span>
+    </button>`;
+  return wrap;
+}
+function updateOkolnostiOpener() {
+  const btn = document.getElementById("btn-okolnosti-open");
+  if (!btn) return;
+  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
+  btn.innerHTML = `<span>📋 ${escapeHtml(label)}</span>` +
+    `<span class="izuzeti-count">${escapeHtml(okolnostiSnippet())} ›</span>`;
+}
+function openOkolnostiOverlay() {
+  closeOkolnostiOverlay();
+  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
+  const ov = document.createElement("div");
+  ov.className = "fs-overlay";
+  ov.id = "okolnosti-overlay";
+  ov.innerHTML = `
+    <div class="fs-overlay-header">
+      <span class="fs-overlay-title" id="okolnosti-ov-title">${escapeHtml(label)}</span>
+      <button class="fs-overlay-close" id="okolnosti-close">✕</button>
+    </div>`;
+  const obody = document.createElement("div");
+  obody.className = "fs-overlay-body";
+  obody.appendChild(buildUvidjajSwitch());
+  const taWrap = document.createElement("div");
+  taWrap.className = "field";
+  taWrap.innerHTML = `<textarea class="dict-textarea" id="okolnosti-fs-ta" data-header-id="okolnosti" placeholder="Opiši okolnosti / uviđaj…">${escapeHtml(STATE.header.okolnosti || "")}</textarea>`;
+  obody.appendChild(taWrap);
+  ov.appendChild(obody);
+  // Donja traka kao kod sekcija: mikrofon + Doradi
+  const bar = document.createElement("div");
+  bar.className = "okolnosti-actionbar";
+  bar.innerHTML = `
     <button type="button" id="okolnosti-mic" class="btn-mic">🎤 Diktiraj</button>
     <button type="button" id="okolnosti-cleanup" class="btn-cleanup">✨ Doradi (Claude)</button>`;
-  return wrap;
+  ov.appendChild(bar);
+  document.body.appendChild(ov);
+  document.body.classList.add("has-fullscreen");
+  bindOkolnostiOverlay(ov);
+}
+function closeOkolnostiOverlay() {
+  const ov = document.getElementById("okolnosti-overlay");
+  if (ov) ov.remove();
+  document.body.classList.remove("has-fullscreen");
+  updateOkolnostiOpener();
+}
+function bindOkolnostiOverlay(ov) {
+  const close = ov.querySelector("#okolnosti-close");
+  if (close) close.addEventListener("click", closeOkolnostiOverlay);
+  const ta = ov.querySelector("#okolnosti-fs-ta");
+  if (ta) {
+    ta.addEventListener("input", () => {
+      STATE.header.okolnosti = ta.value;
+      autoGrow(ta);
+      updateHeaderSummary();
+      autoSave();
+    });
+    ta.addEventListener("focus", () =>
+      setTimeout(() => ta.scrollIntoView({ behavior: "smooth", block: "start" }), 350));
+    autoGrow(ta);
+  }
+  const sw = ov.querySelector("#uvidjaj-switch");
+  if (sw) sw.addEventListener("click", () => {
+    const now = !STATE.header.uvidjaj_lock;
+    STATE.header.uvidjaj_lock = now;
+    STATE.header.okolnosti_label = now ? "Uviđaj" : "Okolnosti slučaja";
+    autoSave();
+    openOkolnostiOverlay();  // ponovo izgradi sa novim modom (tekst ostaje)
+    toast(now
+      ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
+      : "Okolnosti se popunjavaju iz naredbe", "success");
+  });
+  const mic = ov.querySelector("#okolnosti-mic");
+  if (mic) mic.addEventListener("click", () => toggleOkolnostiMic(mic));
+  const dor = ov.querySelector("#okolnosti-cleanup");
+  if (dor) dor.addEventListener("click", () => cleanupOkolnosti(dor));
 }
 
 function setOkolnostiMicState(btn, state) {
@@ -748,6 +830,13 @@ function renderHeaderForm() {
       body.appendChild(buildIzuzetiOpener());
       continue;
     }
+    // Naziv polja okolnosti → unutar okolnosti fokus-prozora (postavlja ga switch)
+    if (f.id === "okolnosti_label") continue;
+    // Okolnosti/Uviđaj → kompaktno dugme koje otvara fokus-prozor
+    if (f.id === "okolnosti") {
+      body.appendChild(buildOkolnostiOpener());
+      continue;
+    }
     const wrap = document.createElement("div");
     wrap.className = "field";
     const label = document.createElement("label");
@@ -799,15 +888,6 @@ function renderHeaderForm() {
       wrap.appendChild(quickWrap);
     }
     body.appendChild(wrap);
-
-    // Switch "Uviđaj" odmah iza polja naziva okolnosti
-    if (f.id === "okolnosti_label") {
-      body.appendChild(buildUvidjajSwitch());
-    }
-    // 🎤 Diktiraj (Groq) + ✨ Doradi (Claude) ispod polja okolnosti/uviđaja
-    if (f.id === "okolnosti") {
-      body.appendChild(buildOkolnostiControls());
-    }
   }
 
   // Bind input events
@@ -834,26 +914,9 @@ function renderHeaderForm() {
   });
 
   // Switch "Uviđaj" — ručni prelaz: naredba (Claude) ↔ lični uviđaj (zaključan)
-  const uvSwitch = body.querySelector("#uvidjaj-switch");
-  if (uvSwitch) {
-    uvSwitch.addEventListener("click", () => {
-      const now = !STATE.header.uvidjaj_lock;
-      STATE.header.uvidjaj_lock = now;
-      STATE.header.okolnosti_label = now ? "Uviđaj" : "Okolnosti slučaja";
-      renderHeaderForm();
-      updateHeaderSummary();
-      autoSave();
-      toast(now
-        ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
-        : "Uviđaj isključen — okolnosti se popunjavaju iz naredbe", "success");
-    });
-  }
-
-  // Okolnosti/uviđaj: 🎤 Diktiraj (Groq) + ✨ Doradi (Claude cleanup)
-  const okMic = body.querySelector("#okolnosti-mic");
-  if (okMic) okMic.addEventListener("click", () => toggleOkolnostiMic(okMic));
-  const okClean = body.querySelector("#okolnosti-cleanup");
-  if (okClean) okClean.addEventListener("click", () => cleanupOkolnosti(okClean));
+  // Okolnosti/Uviđaj — dugme koje otvara fokus-prozor
+  const okOpen = body.querySelector("#btn-okolnosti-open");
+  if (okOpen) okOpen.addEventListener("click", openOkolnostiOverlay);
 
   // Izuzeti uzorci — dugme koje otvara fokus-prozor sa check-listom
   const izOpen = body.querySelector("#btn-izuzeti-open");
