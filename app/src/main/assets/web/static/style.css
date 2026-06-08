@@ -425,6 +425,7 @@ html, body {
 }
 .card-header-row .card-header { flex: 1; min-width: 0; }
 .btn-focus {
+  display: none;  /* u listi nije potreban — klik na sekciju otvara fokus */
   flex: 0 0 auto;
   background: transparent;
   color: var(--text-dim);
@@ -434,6 +435,12 @@ html, body {
   line-height: 1;
   width: 48px;
   cursor: pointer;
+}
+/* ✕ za izlaz vidljiv SAMO u fokusu (cijeli ekran) */
+.card.fullscreen .btn-focus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .btn-focus:hover, .btn-focus:active { background: var(--surface-2); color: var(--text); }
 .card.fullscreen {
@@ -587,12 +594,71 @@ body.has-fullscreen { overflow: hidden; }
 }
 .btn-extract-naredba:hover { background: var(--primary-h); }
 .btn-extract-naredba:disabled { opacity: 0.6; cursor: not-allowed; }
+/* Auto-popuni: dvije direktne ikone (kamera / fajl) */
+.extract-label { font-weight: 600; margin-bottom: 8px; }
+.extract-buttons { display: flex; gap: 8px; }
+.btn-extract-icon {
+  flex: 1;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 46px;
+  cursor: pointer;
+}
+.btn-extract-icon:hover, .btn-extract-icon:active { background: var(--primary-h); }
+.btn-extract-icon:disabled { opacity: 0.6; }
 .extract-hint {
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 6px;
   font-style: italic;
 }
+
+/* Izuzeti uzorci — check-lista (3 grupe) */
+.izuzeti-group {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.izuzeti-gtitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+.izuzeti-items { display: flex; flex-direction: column; gap: 9px; }
+.izuzeti-chk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.izuzeti-chk input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
+.izuzeti-manual {
+  width: 100%;
+  margin-top: 9px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+#btn-izuzeti-sazmi { width: 100%; margin-top: 2px; }
 
 /* Switch "Uviđaj" (naredba ↔ lični uviđaj) */
 .uvidjaj-switch {

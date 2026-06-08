@@ -410,6 +410,130 @@ function setStatus(text, level = "") {
   b.className = "status " + level;
 }
 
+// === Izuzeti uzorci — check-lista (3 grupe) + ručni unos + Claude sažimanje ===
+const IZUZETI_GROUPS = [
+  { id: "g0", title: "Daktiloskopija / mikrotragovi / dlake / nokti", manual: true,
+    items: ["papilarne linije", "mikro tragovi lica", "mikro tragovi odjeće",
+            "mikro tragovi obje šake", "kose tjemenog dijela", "kose čeone regije",
+            "dlake stidne regije", "nokti sa obje šake"] },
+  { id: "g1", title: "Toksikologija", manual: false,
+    items: ["krv", "urin", "očna vodica", "žuč", "želučani sadržaj"] },
+  { id: "g2", title: "Patohistološka analiza", manual: true,
+    items: ["mozak", "pluća", "srce", "jetra", "bubrezi", "gušterača", "slezena"] },
+];
+const DEFAULT_IZUZETI_SENTENCE = "Tokom obdukcije izuzeti uzorci: papilarnih linija, " +
+  "uzorak krvi za DNA te uzorci krvi, očne vodice, urina, žući i želučanog sadržaja za " +
+  "analizu na alkohol i psihoaktivne supstance. Svi uzorci predani krim-tehničaru na dalje postupanje.";
+
+function izuzetiInitState() {
+  if (!STATE.header.izuzeti_checked) {
+    STATE.header.izuzeti_checked = {
+      "papilarne linije": true, "krv": true, "urin": true,
+      "očna vodica": true, "žuč": true, "želučani sadržaj": true,
+    };
+  }
+  if (!STATE.header.izuzeti_manual) STATE.header.izuzeti_manual = {};
+}
+
+function izuzetiCollect(g) {
+  const items = g.items.filter(it => STATE.header.izuzeti_checked[it]);
+  const man = ((STATE.header.izuzeti_manual || {})[g.id] || "").trim();
+  if (man) man.split(",").forEach(m => { if (m.trim()) items.push(m.trim()); });
+  return items;
+}
+
+// Deterministički sastavi tekst iz selekcije (osnova; Claude ga može doraditi)
+function composeIzuzeti() {
+  const g0 = izuzetiCollect(IZUZETI_GROUPS[0]);
+  const g1 = izuzetiCollect(IZUZETI_GROUPS[1]);
+  const g2 = izuzetiCollect(IZUZETI_GROUPS[2]);
+  const segs = [];
+  if (g0.length) segs.push("Tokom obdukcije izuzeti uzorci: " + g0.join(", "));
+  if (g1.length) segs.push((segs.length ? "za toksikološku analizu izuzeti: " : "Za toksikološku analizu izuzeti: ") + g1.join(", "));
+  if (g2.length) segs.push((segs.length ? "za patohistološku analizu izuzeti: " : "Za patohistološku analizu izuzeti: ") + g2.join(", "));
+  let s = "";
+  if (segs.length) s = segs.join("; ") + ". Svi uzorci predani krim-tehničaru na dalje postupanje.";
+  STATE.header.izuzeti_uzorci = s;
+  return s;
+}
+
+function izuzetiSelectedText() {
+  const parts = [];
+  for (const g of IZUZETI_GROUPS) {
+    const items = izuzetiCollect(g);
+    if (items.length) parts.push(g.title + ": " + items.join(", "));
+  }
+  return parts.join(". ");
+}
+
+function buildIzuzetiChecklist(f) {
+  izuzetiInitState();
+  const wrap = document.createElement("div");
+  wrap.className = "field izuzeti-checklist";
+  let html = `<label>${escapeHtml(f.label)}</label>`;
+  for (const g of IZUZETI_GROUPS) {
+    html += `<div class="izuzeti-group"><div class="izuzeti-gtitle">${escapeHtml(g.title)}</div><div class="izuzeti-items">`;
+    for (const it of g.items) {
+      const ck = STATE.header.izuzeti_checked[it] ? "checked" : "";
+      html += `<label class="izuzeti-chk"><input type="checkbox" data-izuzeti-item="${escapeAttr(it)}" ${ck}><span>${escapeHtml(it)}</span></label>`;
+    }
+    html += `</div>`;
+    if (g.manual) {
+      const mv = (STATE.header.izuzeti_manual[g.id]) || "";
+      html += `<input type="text" class="izuzeti-manual" data-izuzeti-manual="${g.id}" placeholder="+ ručno (odvoji zarezom)" value="${escapeAttr(mv)}">`;
+    }
+    html += `</div>`;
+  }
+  html += `<button type="button" class="btn-cleanup" id="btn-izuzeti-sazmi">✨ Sažmi (Claude)</button>`;
+  html += `<label class="field-label" style="margin-top:10px;">Tekst (ide u zapisnik):</label>`;
+  const composed = STATE.header.izuzeti_uzorci || composeIzuzeti();
+  html += `<textarea class="dict-textarea" id="izuzeti-preview" data-header-id="izuzeti_uzorci">${escapeHtml(composed)}</textarea>`;
+  wrap.innerHTML = html;
+  return wrap;
+}
+
+function refreshIzuzetiPreview() {
+  composeIzuzeti();
+  const pv = $("#izuzeti-preview");
+  if (pv) { pv.value = STATE.header.izuzeti_uzorci; autoGrow(pv); }
+  updateHeaderSummary();
+  autoSave();
+}
+
+async function sazmiIzuzeti(btn) {
+  if (!STATE.config.claude_available) { toast("Claude nije konfigurisan", "error"); return; }
+  const selected = izuzetiSelectedText();
+  if (!selected.trim()) { toast("Nijedan uzorak nije izabran"); return; }
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "⏳ Sažimam...";
+  try {
+    const res = await api("/api/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        raw_dictation: selected,
+        section_id: "izuzeti_uzorci",
+        section_title: "Izuzeti uzorci",
+        template_text: DEFAULT_IZUZETI_SENTENCE,
+        is_multi: false,
+        hint: "Sastavi standardni paragraf izuzetih uzoraka u zapisniku, bez izmišljanja.",
+      }),
+    });
+    STATE.header.izuzeti_uzorci = (res.text || "").trim();
+    const pv = $("#izuzeti-preview");
+    if (pv) { pv.value = STATE.header.izuzeti_uzorci; autoGrow(pv); }
+    updateHeaderSummary();
+    autoSave();
+    toast("Sažeto ✓", "success");
+  } catch (err) {
+    toast("Greška: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
 // Switch "Uviđaj": ručni prelaz između (a) okolnosti iz naredbe (Claude popunjava) i
 // (b) ličnog uviđaja (ti diktiraš/upisuješ — Auto-popuni NE smije prebrisati).
 function buildUvidjajSwitch() {
@@ -452,7 +576,7 @@ function appendToOkolnosti(text) {
   const ta = document.querySelector('textarea[data-header-id="okolnosti"]');
   const cur = (STATE.header.okolnosti || "").trim();
   STATE.header.okolnosti = cur ? cur + " " + text.trim() : text.trim();
-  if (ta) { ta.value = STATE.header.okolnosti; ta.scrollTop = ta.scrollHeight; }
+  if (ta) { ta.value = STATE.header.okolnosti; autoGrow(ta); ta.scrollTop = ta.scrollHeight; }
   updateHeaderSummary();
   autoSave();
 }
@@ -515,7 +639,7 @@ async function cleanupOkolnosti(btn) {
     });
     STATE.header.okolnosti = (res.text || "").trim();
     const ta = document.querySelector('textarea[data-header-id="okolnosti"]');
-    if (ta) ta.value = STATE.header.okolnosti;
+    if (ta) { ta.value = STATE.header.okolnosti; autoGrow(ta); }
     updateHeaderSummary();
     autoSave();
     toast("Dorađeno ✓", "success");
@@ -536,16 +660,23 @@ function renderHeaderForm() {
   const extractDiv = document.createElement("div");
   extractDiv.className = "extract-naredba-box";
   extractDiv.innerHTML = `
-    <button class="btn-extract-naredba" id="btn-extract-naredba">
-      📋 Auto-popuni iz naredbe (PDF / foto)
-    </button>
-    <div class="extract-hint">Claude će pročitati naredbu i popuniti polja</div>
-    <input type="file" id="file-naredba" accept="image/*,application/pdf"
-           capture="environment" style="display:none">
+    <div class="extract-label">📋 Auto-popuni iz naredbe</div>
+    <div class="extract-buttons">
+      <button class="btn-extract-icon" id="btn-naredba-camera" title="Slikaj naredbu">📷 Slikaj</button>
+      <button class="btn-extract-icon" id="btn-naredba-file" title="Izaberi fajl">📁 Fajl</button>
+    </div>
+    <div class="extract-hint">Claude pročita naredbu (foto/PDF) i popuni polja</div>
+    <input type="file" id="file-naredba-cam" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="file-naredba-doc" accept="image/*,application/pdf" style="display:none">
   `;
   body.appendChild(extractDiv);
 
   for (const f of STATE.config.header_fields) {
+    // Izuzeti uzorci → check-lista umjesto običnog textarea
+    if (f.id === "izuzeti_uzorci") {
+      body.appendChild(buildIzuzetiChecklist(f));
+      continue;
+    }
     const wrap = document.createElement("div");
     wrap.className = "field";
     const label = document.createElement("label");
@@ -612,6 +743,7 @@ function renderHeaderForm() {
   body.querySelectorAll("[data-header-id]").forEach(el => {
     el.addEventListener("input", e => {
       STATE.header[e.target.dataset.headerId] = e.target.value;
+      if (e.target.tagName === "TEXTAREA") autoGrow(e.target);
       updateHeaderSummary();
       autoSave();
     });
@@ -652,18 +784,40 @@ function renderHeaderForm() {
   const okClean = body.querySelector("#okolnosti-cleanup");
   if (okClean) okClean.addEventListener("click", () => cleanupOkolnosti(okClean));
 
-  // Extract naredba — dugme i file input
-  const btnExtract = $("#btn-extract-naredba");
-  const fileInput = $("#file-naredba");
-  if (btnExtract && fileInput) {
-    btnExtract.addEventListener("click", () => fileInput.click());
-    fileInput.addEventListener("change", async (e) => {
+  // Izuzeti uzorci — checkboxovi, ručni unos, Sažmi (Claude)
+  body.querySelectorAll("[data-izuzeti-item]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      STATE.header.izuzeti_checked[cb.dataset.izuzetiItem] = cb.checked;
+      refreshIzuzetiPreview();
+    });
+  });
+  body.querySelectorAll("[data-izuzeti-manual]").forEach(inp => {
+    inp.addEventListener("input", () => {
+      STATE.header.izuzeti_manual[inp.dataset.izuzetiManual] = inp.value;
+      refreshIzuzetiPreview();
+    });
+  });
+  const sazmiBtn = body.querySelector("#btn-izuzeti-sazmi");
+  if (sazmiBtn) sazmiBtn.addEventListener("click", () => sazmiIzuzeti(sazmiBtn));
+
+  // Extract naredba — dvije direktne ikone (kamera / fajl), bez među-izbornika
+  const camBtn = $("#btn-naredba-camera");
+  const fileBtn = $("#btn-naredba-file");
+  const camInput = $("#file-naredba-cam");
+  const docInput = $("#file-naredba-doc");
+  if (camBtn && camInput) camBtn.addEventListener("click", () => camInput.click());
+  if (fileBtn && docInput) fileBtn.addEventListener("click", () => docInput.click());
+  const bindNaredbaInput = (input, btn) => {
+    if (!input) return;
+    input.addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      await extractNaredba(file, btnExtract);
-      e.target.value = "";  // reset za sljedeći upload
+      await extractNaredba(file, btn);
+      e.target.value = "";
     });
-  }
+  };
+  bindNaredbaInput(camInput, camBtn);
+  bindNaredbaInput(docInput, fileBtn);
 
   updateHeaderSummary();
 }
@@ -724,7 +878,7 @@ function autoGrow(ta) {
 }
 function autoGrowIn(el) {
   if (!el) return;
-  el.querySelectorAll("textarea.dict-textarea").forEach(autoGrow);
+  el.querySelectorAll("textarea").forEach(autoGrow);
 }
 
 function renderSections() {

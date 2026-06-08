@@ -133,19 +133,14 @@ class MainActivity : AppCompatActivity() {
                 filePathCallback = callback
                 cameraPhotoUri = null
                 return try {
-                    val contentIntent = params.createIntent()  // fajlovi (image/* + pdf)
-                    val cameraIntent = createCameraIntent()     // null ako nema kamere
-                    val chooser = Intent(Intent.ACTION_CHOOSER).apply {
-                        putExtra(Intent.EXTRA_INTENT, contentIntent)
-                        putExtra(Intent.EXTRA_TITLE, "Odaberi naredbu (fajl) ili je slikaj")
-                        if (cameraIntent != null) {
-                            putExtra(
-                                Intent.EXTRA_INITIAL_INTENTS,
-                                arrayOf<android.os.Parcelable>(cameraIntent)
-                            )
-                        }
+                    if (params.isCaptureEnabled) {
+                        // <input capture> → kamera DIREKTNO (📷 Slikaj)
+                        val cam = createCameraIntent()
+                        startActivityForResult(cam ?: params.createIntent(), REQ_FILE)
+                    } else {
+                        // Bez capture → birač fajlova (📁 Fajl: PDF/slika)
+                        startActivityForResult(params.createIntent(), REQ_FILE)
                     }
-                    startActivityForResult(chooser, REQ_FILE)
                     true
                 } catch (e: Exception) {
                     Log.e(TAG, "onShowFileChooser greška: ${e.message}", e)
