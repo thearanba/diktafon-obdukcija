@@ -716,6 +716,17 @@ function updateHeaderSummary() {
 }
 
 // === Render: dictation sections (Opcija B - kratka diktacija + Claude merge) ===
+// Textarea raste sa sadržajem (visina = scrollHeight). Radi samo kad je vidljiva.
+function autoGrow(ta) {
+  if (!ta) return;
+  ta.style.height = "auto";
+  ta.style.height = (ta.scrollHeight + 2) + "px";
+}
+function autoGrowIn(el) {
+  if (!el) return;
+  el.querySelectorAll("textarea.dict-textarea").forEach(autoGrow);
+}
+
 function renderSections() {
   const container = $("#sections-container");
   container.innerHTML = "";
@@ -752,6 +763,7 @@ function renderSingleBody(s) {
 
   return `
     <div class="card-body">
+      <button class="btn-focus" data-focus>⛶ Cijeli ekran</button>
       ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
       ${templateText ? `
         <button class="dict-default-toggle" data-show-default>📋 Prikaži pun template paragraf</button>
@@ -790,6 +802,7 @@ function renderMultiBody(s) {
                    s.id === "dodatne" ? "stavku" : "povredu";
   return `
     <div class="card-body">
+      <button class="btn-focus" data-focus>⛶ Cijeli ekran</button>
       ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
       <div class="items-container" data-items-for="${s.id}">${itemsHtml}</div>
       <button class="btn-add-item" data-add-item="${s.id}">+ Dodaj ${itemNoun}</button>
@@ -854,6 +867,7 @@ function bindSectionEvents() {
       const target = e.target.dataset.target;
       const sec = getSection(sid);
       sec[target] = e.target.value;
+      autoGrow(e.target);
       updateSectionStatus(sid);
       autoSave();
     });
@@ -868,6 +882,7 @@ function bindSectionEvents() {
       const item = getItem(sid, idx);
       if (item) {
         item[target] = e.target.value;
+        autoGrow(e.target);
         updateSectionStatus(sid);
         autoSave();
       }
@@ -1043,7 +1058,7 @@ async function mergeSection(sectionId) {
     });
     sec.final = res.text;
     const finalTa = document.querySelector(`textarea[data-section-id="${sectionId}"][data-target="final"]`);
-    if (finalTa) finalTa.value = res.text;
+    if (finalTa) { finalTa.value = res.text; autoGrow(finalTa); }
     updateSectionStatus(sectionId);
     autoSave();
     toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out} tokens)`, "success");
@@ -1060,7 +1075,27 @@ document.addEventListener("click", e => {
   const header = e.target.closest("[data-toggle]");
   if (!header) return;
   const card = header.closest(".collapsible");
-  if (card) card.classList.toggle("open");
+  if (!card) return;
+  // U fokus-modu klik na zaglavlje ne zatvara karticu
+  if (card.classList.contains("fullscreen")) return;
+  const opened = card.classList.toggle("open");
+  if (opened) autoGrowIn(card);  // visina textarea-a prema sadržaju kad postanu vidljive
+});
+
+// === Fokus (cijeli ekran) jedne sekcije ===
+document.addEventListener("click", e => {
+  const fb = e.target.closest("[data-focus]");
+  if (!fb) return;
+  const card = fb.closest(".card");
+  if (!card) return;
+  card.classList.add("open");  // mora biti otvorena da se vidi sadržaj
+  const nowFs = card.classList.toggle("fullscreen");
+  document.body.classList.toggle("has-fullscreen", nowFs);
+  fb.textContent = nowFs ? "✕ Izađi iz fokusa" : "⛶ Cijeli ekran";
+  if (nowFs) {
+    autoGrowIn(card);
+    card.scrollTop = 0;
+  }
 });
 
 // === Recording (single section) ===
@@ -1165,6 +1200,7 @@ function appendToItem(sectionId, itemIdx, target, text) {
   );
   if (ta) {
     ta.value = item[target];
+    autoGrow(ta);
     ta.scrollTop = ta.scrollHeight;
   }
   updateSectionStatus(sectionId);
@@ -1208,7 +1244,7 @@ async function mergeItem(sectionId, itemIdx) {
     const finalTa = document.querySelector(
       `textarea[data-item-section="${sectionId}"][data-item-idx="${itemIdx}"][data-item-target="final"]`
     );
-    if (finalTa) finalTa.value = item.final;
+    if (finalTa) { finalTa.value = item.final; autoGrow(finalTa); }
     updateSectionStatus(sectionId);
     autoSave();
     toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out})`, "success");
@@ -1359,6 +1395,7 @@ function appendToSection(sectionId, target, text) {
   const current = ta.value.trim();
   const sep = current ? (current.endsWith(".") || current.endsWith("\n") ? " " : " ") : "";
   ta.value = current ? current + sep + text : text;
+  autoGrow(ta);
   const sec = getSection(sectionId);
   sec[target] = ta.value;
   updateSectionStatus(sectionId);
@@ -1417,6 +1454,7 @@ async function cleanupSection(sectionId) {
       }),
     });
     ta.value = res.text;
+    autoGrow(ta);
     getSection(sectionId).final = res.text;
     autoSave();
     toast("Dorađeno ✓", "success");

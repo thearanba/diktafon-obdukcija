@@ -412,6 +412,40 @@ html, body {
 }
 .collapsible.open .card-body { display: block; }
 
+/* Fokus dugme + cijeli-ekran mod sekcije */
+.btn-focus {
+  display: inline-block;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.btn-focus:hover, .btn-focus:active { background: var(--border); color: var(--text); }
+.card.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  margin: 0;
+  border-radius: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  box-shadow: none;
+}
+.card.fullscreen .card-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+/* prostor na dnu da posljednje polje ne ostane iza tastature */
+.card.fullscreen .card-body { padding-bottom: 45vh; }
+body.has-fullscreen { overflow: hidden; }
+
 /* Status oznake u headerima sekcija */
 .section-status {
   display: inline-block;
