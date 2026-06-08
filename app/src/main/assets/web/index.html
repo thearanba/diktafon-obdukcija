@@ -12,13 +12,18 @@
 
 <header class="topbar">
   <div class="topbar-left">
-    <div class="title">Diktafon obdukcija</div>
-    <div class="draft-indicator">
-      <span id="save-status-dot" title="Status auto-save"></span>
-      <span id="draft-name-indicator" class="dim">(nema drafta)</span>
-    </div>
+    <span id="save-status-dot" title="Status auto-save"></span>
+    <span class="title">Diktafon obdukcija</span>
+    <span id="draft-name-indicator" class="dim">(nema drafta)</span>
   </div>
-  <div class="status" id="status-badge">učitavanje...</div>
+  <div class="topbar-right">
+    <span class="status" id="status-badge">učitavanje...</span>
+    <button id="btn-menu" class="btn-menu" title="Meni" aria-label="Meni">⋮</button>
+  </div>
+  <div id="topbar-menu" class="topbar-menu">
+    <button id="menu-settings">⚙ Postavke (API ključevi)</button>
+    <button id="menu-reload">↻ Osvježi</button>
+  </div>
 </header>
 
 <main id="app">

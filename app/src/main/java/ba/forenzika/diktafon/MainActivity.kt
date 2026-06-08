@@ -62,7 +62,9 @@ class MainActivity : AppCompatActivity() {
 
         webView = WebView(this)
         setContentView(webView)
-        supportActionBar?.title = getString(R.string.app_name)
+        // Sakrij nativnu ActionBar — naslov + meni su sada u HTML traci (štedi prostor,
+        // uklanja dupli „Diktafon obdukcija").
+        supportActionBar?.hide()
 
         assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/", WebAssetHandler(this))
@@ -259,6 +261,14 @@ class MainActivity : AppCompatActivity() {
                         "window.__nativeResolve && window.__nativeResolve('$reqId','$b64')", null
                     )
                 }
+            }
+        }
+
+        /** Otvori ekran Postavke (API ključevi) — poziva se iz HTML ⋮ menija. */
+        @JavascriptInterface
+        fun openSettings() {
+            runOnUiThread {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
             }
         }
 

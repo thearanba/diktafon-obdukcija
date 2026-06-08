@@ -29,22 +29,79 @@ html, body {
   top: 0;
   z-index: 20;
   background: var(--surface);
-  padding: 8px 12px;
+  padding: 6px 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  min-height: 48px;
-  gap: 10px;
+  min-height: 40px;
+  gap: 8px;
 }
+/* Jedna kompaktna linija: dot + naslov + naziv drafta */
 .topbar-left {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   flex: 1;
 }
-.topbar .title { font-weight: 600; font-size: 14px; color: var(--text-dim); line-height: 1.1; }
+.topbar .title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.1;
+  flex-shrink: 0;
+}
+#draft-name-indicator {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-menu {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.btn-menu:hover, .btn-menu:active { background: var(--surface-2); }
+/* Dropdown meni (Postavke / Osvježi) */
+.topbar-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 8px;
+  margin-top: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+  z-index: 50;
+  overflow: hidden;
+  min-width: 200px;
+}
+.topbar-menu.show { display: flex; flex-direction: column; }
+.topbar-menu button {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.topbar-menu button:hover, .topbar-menu button:active { background: var(--border); }
 
 .draft-indicator {
   display: flex;
@@ -53,7 +110,6 @@ html, body {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
-  margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -916,12 +972,12 @@ button {
   .item-num { font-size: 11px; }
   .btn-item-remove { width: 28px; height: 28px; font-size: 14px; }
 
-  /* Topbar */
-  .topbar { padding: 6px 10px; min-height: 42px; gap: 6px; }
-  .topbar .title { font-size: 11px; }
-  .draft-indicator { font-size: 13px; gap: 5px; }
-  #draft-name-indicator { max-width: 180px; }
-  .status { font-size: 11px; padding: 3px 7px; }
+  /* Topbar — jedna kompaktna linija */
+  .topbar { padding: 5px 8px; min-height: 38px; gap: 6px; }
+  .topbar .title { font-size: 14px; }
+  #draft-name-indicator { font-size: 12px; max-width: 130px; }
+  .status { font-size: 10px; padding: 3px 7px; }
+  .btn-menu { font-size: 20px; width: 32px; height: 32px; }
 
   /* Card headers (sekcije) */
   .card-header { padding: 11px 12px; font-size: 14px; min-height: 46px; }

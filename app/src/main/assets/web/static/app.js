@@ -1700,10 +1700,10 @@ async function init() {
   try {
     STATE.config = await api("/api/config");
 
-    let statusText = "Gboard mode";
+    let statusText = "Gboard";
     let statusLevel = "warn";
     if (STATE.config.stt_options.includes("groq")) {
-      statusText = "Groq Whisper ✓";
+      statusText = "Groq ✓";
       statusLevel = "ok";
     }
     if (!STATE.config.claude_available) {
@@ -1741,6 +1741,27 @@ async function init() {
   $("#btn-new-draft").addEventListener("click", newDraft);
   $("#btn-clear").addEventListener("click", clearCurrent);
   $("#btn-generate").addEventListener("click", generateReport);
+
+  // ⋮ meni u traci (Postavke / Osvježi) — zamjena za nativnu ActionBar
+  const menuBtn = $("#btn-menu");
+  const menu = $("#topbar-menu");
+  if (menuBtn && menu) {
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.classList.toggle("show");
+    });
+    document.addEventListener("click", () => menu.classList.remove("show"));
+    const mSettings = $("#menu-settings");
+    const mReload = $("#menu-reload");
+    if (mSettings) mSettings.addEventListener("click", () => {
+      menu.classList.remove("show");
+      if (window.AndroidBridge && AndroidBridge.openSettings) AndroidBridge.openSettings();
+    });
+    if (mReload) mReload.addEventListener("click", () => {
+      menu.classList.remove("show");
+      location.reload();
+    });
+  }
 
   // Service worker se NE registruje u native aplikaciji (nema servera; izbjegava cache probleme).
 }
