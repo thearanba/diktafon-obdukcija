@@ -53,20 +53,60 @@ if EXAMPLES_PATH.exists():
         print(f"[android_api] Greška examples.json: {e}")
 
 
-def build_whisper_bias_prompt() -> str:
-    return (
-        "Sudsko-medicinski obdukcioni zapisnik. Termini: poglavina, lobanja, moždanica, "
-        "tvrda moždanica bjeličasto sedefasta, srednjekrvna, malokrvna, mnogokrvna, "
-        "porebrica, poplućnica, potrbušnica, osrčje, usrčnica, ždrijelo, jednjak, "
-        "gušterača, nadbubrezi, bubrežna korita, mokraćovod, štitnjača, limfni čvorići, "
-        "oguljotina, razderotina, nagnječina, krvni podljev, mrtvačke mrlje, ožiljak, "
-        "sasušina kože, somotasta sluznica, sukrvičav sadržaj, modrikast, smeđkast, "
-        "žućkast, bjeloočnice, sedefasta, kruškolik, jasne građe i crteža, "
-        "glatke sjajne, prebojen žučnim bojama."
-    )
+# Bazni (uvijek prisutni) termini — palatali i najčešće riječi koje Whisper iskrivi.
+WHISPER_BASE_TERMS = (
+    "Sudsko-medicinski obdukcioni zapisnik. Opšti termini: poglavina, moždanica, "
+    "porebrica, poplućnica, potrbušnica, osrčje, usrčnica, srednjekrvna, malokrvna, "
+    "mnogokrvna, bjeličasto sedefasta, sukrvičav, somotasta sluznica, oguljotina kože, "
+    "razderotina, nagnječina, krvni podljev, krvlju podljeveno, truležno izmijenjeno, "
+    "jasne građe i crteža, glatke sjajne."
+)
+
+# Termini specifični za pojedinu sekciju — dižu tačnost prepoznavanja u tom dijelu
+# (kontekstualni initial_prompt). Whisper čuva zadnjih ~224 tokena, pa ovo ide na kraj.
+WHISPER_SECTION_TERMS = {
+    "s1_opsti": "muški ženski leš, dužine cm, dobi godina, uhranjenost, odjeća.",
+    "s1_konstitucija": "kostur mišići razvijeni, mrtvačka ukočenost, mrtvačke mrlje slivene "
+        "postranično ljubičasto crvene, koža blijedo sivo ružičasta.",
+    "s2_glava_lice": "kosa, brada brkovi, očni kapci, veznice i bjeloočnice glatke sjajne, "
+        "rožnjače, dužice, zjenice.",
+    "s2_usta": "usta poluotvorena, sluznica usana glatka ružičasta.",
+    "s2_zubi_vrat_grudi": "zubi, alveolni greben, vrat pokretljiv, grudni koš valjkast simetričan, "
+        "trbuh, kosmatost polnog predjela, spolovilo, ekstremiteti simetrični.",
+    "s3_povrede": "oguljotina kože, razderno-nagnječna rana, nagnječina kože, krvni podljev, "
+        "podljev kože, ogoljene kožice, krvlju podljevene ivice, nepravilnog ovalnog oblika, "
+        "tamno crvene ljubičaste boje, oblika i veličine, mjere centimetara.",
+    "s4_otvori": "spoljašnji tjelesni otvori ušiju nosa usta polnog otvora i čmara, strani sadržaj.",
+    "s5_mozak": "tkivo poglavine, krov lobanje kruškolik, kosti svoda lobanje očuvane, tvrda moždanica "
+        "bjeličasto sedefasta, moždanični slivovi, meke moždanice krvlju podljevene, otok mozga, "
+        "mozak vijuge i brazde, srednjekrvan, truležno izmijenjeno.",
+    "s6_jezik": "jezik jasne građe i crteža, limfni čvorići korijena jezika, ždrijelo i jednjak, "
+        "grkljan dušnik glavne dušnice, limfni čvorići ispod račve dušnika zrno graška, štitnjača.",
+    "s7_pluca": "grudne šupljine, poplućnica i porebrica glatke sjajne, pluća, rezna ploha, "
+        "najsitnije dušnice sluzav sadržaj, sitni krvni sudovi tečna krv.",
+    "s8_srce": "srčana kesa, vanjski unutrašnji list osrčja, srce čvrsto, arterijska i venska ušća "
+        "zalisci, osrčnica usrčnica, srčani mišić, desna lijeva komora, srčane arterije prohodne, "
+        "grudna aorta intima, jajasta rupica između pretkomora, koronarne.",
+    "s9_trbuh": "trbušna šupljina, potrbušnice glatke sjajne, slezena, žučna kesica žuč prebojena "
+        "žučnim bojama, jetra providne čaure, gušterača sitnorežnjasta, nadbubrezi kora sredina, "
+        "bubrezi lako skidljive čahure kora piramide, bubrežna korita mokraćovod, mokraćni mjehur, spolni organi.",
+    "s10_git": "želudac sadržaj, sluznica želuca, dvanaestopalačno crijevo, tanko debelo srpasto "
+        "završno crijevo, crijevni sadržaj, sluznica mnogokrvna.",
+    "s11_kostur": "prelom kostiju, serijski prelomi rebara, pazušna i lopatična linija, koštani sistem, "
+        "svod i baza lobanje, kralježnica, nadlaktica podlaktica, butna kost, potkoljenica, karlica, grudna kost.",
+    "dodatne": "histološka pretraga, toksikološka analiza, alkohol i psihoaktivne supstance, DNA.",
+    "misljenje": "smrt je nasilna, neposredno uzrokovana, uzrok smrti, mehanizam smrti, obdukcijom utvrđeno, "
+        "krvarenje, otok mozga, krvni podljev, razderno-nagnječna rana, prelom, povreda regije, "
+        "sa stepenom sigurnosti graničnim sa izvjesnošću, konzistentno sa.",
+    "okolnosti": "mjesto i vrijeme pronalaska, položaj tijela, zatečeno stanje, lice mjesta, uviđaj.",
+}
 
 
-WHISPER_BIAS_PROMPT = build_whisper_bias_prompt()
+def whisper_prompt_for(section_id: str) -> str:
+    terms = WHISPER_SECTION_TERMS.get(section_id or "", "")
+    if terms:
+        return f"{WHISPER_BASE_TERMS} Termini za ovaj dio: {terms}"
+    return WHISPER_BASE_TERMS
 
 
 def select_examples(section_id: str, count: int = 4) -> list:
@@ -221,10 +261,11 @@ def ep_transcribe(payload):
         filename = "audio.mp3"
     else:
         filename = "audio.webm"
+    section_id = payload.get("section_id", "")
     raw_text = api_clients.groq_transcribe(
         GROQ_API_KEY, audio_bytes, filename, audio_ct,
         model="whisper-large-v3", language="hr",
-        prompt=WHISPER_BIAS_PROMPT, temperature="0",
+        prompt=whisper_prompt_for(section_id), temperature="0",
     )
     corrected = apply_corrections(raw_text)
     return {"text": corrected, "raw_whisper": raw_text}

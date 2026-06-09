@@ -123,6 +123,21 @@ BUILTIN_CORRECTIONS = {
     r"\bglatke sjajne": "glatke, sjajne",
     r"\botvr da moždanica": "tvrda moždanica",
     r"\bmrtva čka": "mrtvačka",
+
+    # Najčešći termini iz baze obdukcija (sigurni split-fixevi)
+    r"\bpo dljev": "podljev",
+    r"\bpod ljev": "podljev",
+    r"\bkrvni po dljev": "krvni podljev",
+    r"\bog uljotina": "oguljotina",
+    r"\bogulj otina": "oguljotina",
+    r"\bna gnječ": "nagnječ",
+    r"\brazder no": "razderno",
+    r"\brazderno nagnje čina": "razderno-nagnječna",
+    r"\btru ležno": "truležno",
+    r"\btrule žno": "truležno",
+    r"\bbubrežna ko rita": "bubrežna korita",
+    r"\bsrpasto m": "srpastom",
+    r"\bdvanaesto palačn": "dvanaestopalačn",
 }
 
 
