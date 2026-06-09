@@ -696,8 +696,6 @@ function bindOkolnostiOverlay(ov) {
       updateHeaderSummary();
       autoSave();
     });
-    ta.addEventListener("focus", () =>
-      setTimeout(() => ta.scrollIntoView({ behavior: "smooth", block: "start" }), 350));
     autoGrow(ta);
   }
   const sw = ov.querySelector("#uvidjaj-switch");
@@ -996,8 +994,12 @@ function updateHeaderSummary() {
 // Textarea raste sa sadržajem (visina = scrollHeight). Radi samo kad je vidljiva.
 function autoGrow(ta) {
   if (!ta) return;
+  // Sačuvaj poziciju skrola kontejnera — da kucanje (reset height:auto) ne "skoči" na vrh
+  const sc = ta.closest(".card.fullscreen, .fs-overlay");
+  const top = sc ? sc.scrollTop : 0;
   ta.style.height = "auto";
   ta.style.height = (ta.scrollHeight + 2) + "px";
+  if (sc) sc.scrollTop = top;
 }
 function autoGrowIn(el) {
   if (!el) return;
@@ -1152,14 +1154,8 @@ function bindSectionEvents() {
     });
   });
 
-  // Fokus u textarea (klik na tekst) → pomjeri stavku/sekciju na vrh nakon što se otvori
-  // tastatura, da ima prostora za kucanje (block:start + scroll-margin ispod naslova).
-  container.querySelectorAll(".dict-textarea").forEach(ta => {
-    ta.addEventListener("focus", () => {
-      const scope = ta.closest(".item-card") || ta;
-      setTimeout(() => scope.scrollIntoView({ behavior: "smooth", block: "start" }), 350);
-    });
-  });
+  // (Uklonjen forsirani skrol-na-vrh pri fokusu textarea — smetao uređivanju dužih
+  //  tekstova; Android adjustResize sam drži kursor iznad tastature.)
 
   // Single section events
   container.querySelectorAll("[data-show-default]").forEach(btn => {
