@@ -1207,6 +1207,61 @@ button {
   text-align: center;
 }
 .toast.hidden { display: none; }
+
+/* === Vlastiti dijalog (uiConfirm / uiPrompt) === */
+.dlg-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 600;                 /* iznad drafts modala (100) i fs-overlay (400) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.12s ease-out;
+}
+.dlg-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.dlg-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+.dlg-msg {
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  white-space: pre-line;        /* poštuj \n u poruci */
+  margin-bottom: 18px;
+}
+.dlg-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 15px;
+  margin-bottom: 18px;
+}
+.dlg-input:focus { outline: none; border-color: var(--primary); }
+.dlg-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.dlg-actions button { min-width: 92px; }
+.btn-danger-solid {
+  background: var(--danger);
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 7px;
+  font-weight: 600;
+  font-size: 14px;
+  min-height: 40px;
+  white-space: nowrap;
+}
+.btn-danger-solid:hover { filter: brightness(1.1); }
 .toast.error { border-color: var(--danger); }
 .toast.success { border-color: var(--success); }
 

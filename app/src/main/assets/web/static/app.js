@@ -404,6 +404,65 @@ function toast(msg, type = "info") {
   toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
 }
 
+// === Vlastiti dijalog (zamjena za nativni confirm/prompt) ===
+// Nativni WebView confirm/prompt iznad poruke ispisuje "The page at https://appassets..."
+// — to je Androidova zaštita za web-stranice, kod nas samo smeta. Ovaj modal je u stilu
+// aplikacije (tamna tema, bosanski, naša dugmad) i taj prefiks se ne pojavljuje.
+function uiConfirm(message, opts = {}) {
+  const {
+    title = "Potvrda",
+    okText = "U redu",
+    cancelText = "Otkaži",
+    danger = false,
+  } = opts;
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "dlg-overlay";
+    ov.innerHTML = `
+      <div class="dlg-box" role="dialog" aria-modal="true">
+        <div class="dlg-title">${escapeHtml(title)}</div>
+        <div class="dlg-msg">${escapeHtml(message)}</div>
+        <div class="dlg-actions">
+          <button class="btn-secondary" data-dlg-cancel>${escapeHtml(cancelText)}</button>
+          <button class="${danger ? "btn-danger-solid" : "btn-primary"}" data-dlg-ok>${escapeHtml(okText)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const done = (val) => { if (ov.parentElement) ov.parentElement.removeChild(ov); resolve(val); };
+    ov.querySelector("[data-dlg-ok]").addEventListener("click", () => done(true));
+    ov.querySelector("[data-dlg-cancel]").addEventListener("click", () => done(false));
+    ov.addEventListener("click", e => { if (e.target === ov) done(false); });
+    setTimeout(() => { const b = ov.querySelector("[data-dlg-ok]"); if (b) b.focus(); }, 30);
+  });
+}
+
+function uiPrompt(message, defaultValue = "", opts = {}) {
+  const { title = "Unos", okText = "Sačuvaj", cancelText = "Otkaži" } = opts;
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "dlg-overlay";
+    ov.innerHTML = `
+      <div class="dlg-box" role="dialog" aria-modal="true">
+        <div class="dlg-title">${escapeHtml(title)}</div>
+        <div class="dlg-msg">${escapeHtml(message)}</div>
+        <input class="dlg-input" type="text" />
+        <div class="dlg-actions">
+          <button class="btn-secondary" data-dlg-cancel>${escapeHtml(cancelText)}</button>
+          <button class="btn-primary" data-dlg-ok>${escapeHtml(okText)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const input = ov.querySelector(".dlg-input");
+    input.value = defaultValue;
+    const done = (val) => { if (ov.parentElement) ov.parentElement.removeChild(ov); resolve(val); };
+    ov.querySelector("[data-dlg-ok]").addEventListener("click", () => done(input.value));
+    ov.querySelector("[data-dlg-cancel]").addEventListener("click", () => done(null));
+    ov.addEventListener("click", e => { if (e.target === ov) done(null); });
+    input.addEventListener("keydown", e => { if (e.key === "Enter") done(input.value); });
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+
 function setStatus(text, level = "") {
   const b = $("#status-badge");
   b.textContent = text;
@@ -1225,12 +1284,13 @@ function bindSectionEvents() {
   });
 
   container.querySelectorAll("[data-use-default]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const sid = btn.dataset.useDefault;
       const s = getSectionDef(sid);
       const tpl = s ? (s.template_text || s.default || "") : "";
       if (!tpl) return;
-      if (confirm("Zameniti finalni tekst sa template paragrafom?")) {
+      if (await uiConfirm("Trenutni finalni tekst ove sekcije biće zamijenjen sadržajem iz template-a.",
+          { title: "Zamijeniti finalni tekst?", okText: "Zamijeni" })) {
         const sec = getSection(sid);
         sec.final = tpl;
         const ta = document.querySelector(`textarea[data-section-id="${sid}"][data-target="final"]`);
@@ -1242,9 +1302,10 @@ function bindSectionEvents() {
   });
 
   container.querySelectorAll("[data-clear-raw]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const sid = btn.dataset.clearRaw;
-      if (confirm("Obrisati sirovu diktaciju?")) {
+      if (await uiConfirm("Sirova (diktirana) verzija ove sekcije biće obrisana.",
+          { title: "Obrisati sirovu diktaciju?", okText: "Obriši", danger: true })) {
         getSection(sid).raw = "";
         const ta = document.querySelector(`textarea[data-section-id="${sid}"][data-target="raw"]`);
         if (ta) ta.value = "";
@@ -1254,9 +1315,10 @@ function bindSectionEvents() {
     });
   });
   container.querySelectorAll("[data-clear-final]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const sid = btn.dataset.clearFinal;
-      if (confirm("Obrisati finalni tekst?")) {
+      if (await uiConfirm("Finalni (dorađeni) tekst ove sekcije biće obrisan.",
+          { title: "Obrisati finalni tekst?", okText: "Obriši", danger: true })) {
         getSection(sid).final = "";
         const ta = document.querySelector(`textarea[data-section-id="${sid}"][data-target="final"]`);
         if (ta) ta.value = "";
@@ -1288,12 +1350,13 @@ function bindSectionEvents() {
     });
   });
   container.querySelectorAll("[data-remove-item]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const sid = btn.dataset.removeItem;
       const idx = parseInt(btn.dataset.removeIdx, 10);
       const item = getItem(sid, idx);
       const hasContent = item && (item.raw || item.final).trim().length > 0;
-      if (hasContent && !confirm("Obrisati ovu stavku?")) return;
+      if (hasContent && !(await uiConfirm("Ova stavka ima sadržaj koji će biti obrisan.",
+          { title: "Obrisati stavku?", okText: "Obriši", danger: true }))) return;
       removeItem(sid, idx);
       rerenderMultiBody(sid);
     });
@@ -1967,10 +2030,10 @@ async function generateReport() {
     const missing = [];
     if (!ime) missing.push("Prezime i ime");
     if (!kt) missing.push("KT broj");
-    const proceed = confirm(
-      `Upozorenje: nedostaje ${missing.join(" i ")} u zaglavlju.\n\n` +
-      `Bez toga, fajl će se zvati "Zapisnik YYYY-MM-DD HH-MM.docx" umjesto "Prezime Ime - KT broj.docx".\n\n` +
-      `Generisati svejedno?`
+    const proceed = await uiConfirm(
+      `Nedostaje ${missing.join(" i ")} u zaglavlju.\n\n` +
+      `Bez toga, fajl će se zvati "Zapisnik YYYY-MM-DD HH-MM.docx" umjesto "Prezime Ime - KT broj.docx".`,
+      { title: "Upozorenje", okText: "Generiši svejedno", cancelText: "Popuni prvo" }
     );
     if (!proceed) {
       // Otvori zaglavlje da korisnik popuni
@@ -2089,11 +2152,12 @@ async function switchToDraft(id) {
   toast(`Učitan: ${data.name}`, "success");
 }
 
-function newDraft() {
+async function newDraft() {
   // Pitaj samo ako trenutni draft ima sadržaj
   const hasContent = Object.keys(STATE.header).some(k => STATE.header[k])
     || Object.keys(STATE.sections).length > 0;
-  if (hasContent && !confirm("Otvoriti novi prazan draft? Trenutni će biti sačuvan u listi.")) {
+  if (hasContent && !(await uiConfirm("Trenutni draft biće sačuvan u listi.",
+      { title: "Otvoriti novi prazan draft?", okText: "Otvori novi" }))) {
     return;
   }
   const id = createNewDraft(autoDraftName({}));
@@ -2109,8 +2173,9 @@ function newDraft() {
   toast("Novi draft kreiran ✓", "success");
 }
 
-function clearCurrent() {
-  if (!confirm("Obrisati sav sadržaj trenutnog drafta? (Sami draft ostaje u listi, samo ga prazniš.)")) return;
+async function clearCurrent() {
+  if (!(await uiConfirm("Sadržaj trenutnog drafta biće obrisan. Sam draft ostaje u listi — samo ga prazniš.",
+      { title: "Obrisati sav sadržaj?", okText: "Obriši sadržaj", danger: true }))) return;
   STATE.header = {};
   STATE.sections = {};
   izuzetiResetDefaults();
@@ -2181,7 +2246,7 @@ function openDraftsModal() {
     b.addEventListener("click", async () => {
       const id = b.dataset.renameId;
       const d = listDrafts().find(x => x.id === id);
-      const newName = prompt("Novi naziv drafta:", d ? d.name : "");
+      const newName = await uiPrompt("Novi naziv drafta:", d ? d.name : "", { title: "Preimenuj draft" });
       if (newName && newName.trim() && d) {
         const data = await loadDraftById(id);
         if (data) {
@@ -2193,11 +2258,12 @@ function openDraftsModal() {
     })
   );
   overlay.querySelectorAll("[data-delete-id]").forEach(b =>
-    b.addEventListener("click", () => {
+    b.addEventListener("click", async () => {
       const id = b.dataset.deleteId;
       const d = listDrafts().find(x => x.id === id);
       if (!d) return;
-      if (!confirm(`Obrisati draft "${d.name}"? Ova akcija se ne može poništiti.`)) return;
+      if (!(await uiConfirm(`Draft "${d.name}" biće trajno obrisan. Ova akcija se ne može poništiti.`,
+          { title: "Obrisati draft?", okText: "Obriši", danger: true }))) return;
       const wasCurrent = id === getCurrentDraftId();
       deleteDraft(id);
       if (wasCurrent) {
