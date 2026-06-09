@@ -453,8 +453,9 @@ function composeIzuzeti() {
   if (g0.length) segs.push("Tokom obdukcije izuzeti uzorci: " + g0.join(", "));
   if (g1.length) segs.push((segs.length ? "za toksikološku analizu izuzeti: " : "Za toksikološku analizu izuzeti: ") + g1.join(", "));
   if (g2.length) segs.push((segs.length ? "za patohistološku analizu izuzeti: " : "Za patohistološku analizu izuzeti: ") + g2.join(", "));
-  let s = "";
+  let s;
   if (segs.length) s = segs.join("; ") + ". Svi uzorci predani krim-tehničaru na dalje postupanje.";
+  else s = "Nisu izuzeti uzorci za dodatne pretrage.";
   STATE.header.izuzeti_uzorci = s;
   return s;
 }

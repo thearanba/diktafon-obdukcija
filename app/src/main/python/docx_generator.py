@@ -259,7 +259,8 @@ def _fill_header_table(doc, header_data: dict):
     # Cell (5,1): okolnosti (USER) → izuzeti uzorci (USER) → standardni dodatak (statič)
     cell_51 = table.rows[5].cells[1]
     okolnosti_tekst = header_data.get("okolnosti", "").strip()
-    izuzeti_tekst = (header_data.get("izuzeti_uzorci") or "").strip() or DEFAULT_IZUZETI_UZORCI
+    # Prazno (ništa nije izuzeto) → eksplicitna napomena, NE standardni spisak iz template-a
+    izuzeti_tekst = (header_data.get("izuzeti_uzorci") or "").strip() or "Nisu izuzeti uzorci za dodatne pretrage."
     standardni_obdukcija = (
         "Obdukcija obavljena u prosekturi Katedre za sudsku medicinu Medicinskog Fakulteta UNSA. "
         "Pregled tijela fotografisao krim-tehničar."
