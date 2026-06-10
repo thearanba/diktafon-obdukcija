@@ -802,14 +802,19 @@ async function toggleOkolnostiMic(btn) {
     toast("Groq nije konfigurisan (Postavke).", "error");
     return;
   }
+  // Ako snima neka sekcija, zaustavi je prije pokretanja okolnosti
+  // (inače bi dva recorder-a radila paralelno, a referenca na prvi bi se izgubila)
+  if (STATE.recording) stopRecording();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
+    const rec = { okolnosti: true, mediaRecorder: mr, chunks };
     mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
-      STATE.recording = null;
+      // Guarded clear — vidi komentar u startGroqRecording (zombi mikrofon)
+      if (STATE.recording === rec) STATE.recording = null;
       setOkolnostiMicState(btn, "processing");
       try {
         const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
@@ -826,7 +831,7 @@ async function toggleOkolnostiMic(btn) {
       }
     };
     mr.start();
-    STATE.recording = { okolnosti: true, mediaRecorder: mr, chunks };
+    STATE.recording = rec;
     setOkolnostiMicState(btn, "recording");
   } catch (err) {
     toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
@@ -1196,8 +1201,11 @@ function renderItem(s, idx, item) {
   `;
 }
 
-function bindSectionEvents() {
-  const container = $("#sections-container");
+function bindSectionEvents(scope) {
+  // scope = jedna kartica (rerenderMultiBody) ili izostavljeno = cijeli kontejner
+  // (renderSections). Bez scope-a bi se pri svakom rerenderu jedne kartice listeneri
+  // PONOVO dodavali i na netaknute kartice → dupli merge/transcribe pozivi (dupli trošak).
+  const container = scope || $("#sections-container");
 
   // Tab switcher (Diktat | Finalno) — scope: stavka (item-card) ili cijela sekcija (card)
   container.querySelectorAll(".seg-tab").forEach(tab => {
@@ -1377,7 +1385,7 @@ function rerenderMultiBody(sid) {
     const fb = card.querySelector("[data-focus]");
     if (fb) fb.textContent = "✕";
   }
-  bindSectionEvents();
+  bindSectionEvents(card);
   updateSectionStatus(sid);
   // Zadrži vizuelnu selekciju aktivne stavke (ako je ova sekcija u fokusu)
   if (STATE.focusSectionId === sid && STATE.focusItemIdx != null) {
@@ -1677,13 +1685,16 @@ async function startItemRecording(sectionId, itemIdx) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
+    const rec = { section_id: sectionId, itemIdx, mediaRecorder: mr, chunks, warmingUp: true };
     mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
+      // Guarded clear — vidi komentar u startGroqRecording (zombi mikrofon)
+      if (STATE.recording === rec) STATE.recording = null;
       await processGroqItemRecording(sectionId, itemIdx, chunks, mr.mimeType);
     };
     mr.start();
-    STATE.recording = { section_id: sectionId, itemIdx, mediaRecorder: mr, chunks, warmingUp: true };
+    STATE.recording = rec;
     updateItemMicState(sectionId, itemIdx, "preparing");
     setTimeout(() => {
       if (STATE.recording && STATE.recording.mediaRecorder === mr) {
@@ -1712,7 +1723,7 @@ async function processGroqItemRecording(sectionId, itemIdx, chunks, mimeType) {
   } catch (err) {
     toast("Transkripcija greška: " + err.message, "error");
   } finally {
-    STATE.recording = null;
+    // STATE.recording čisti mr.onstop (guarded) — ne dirati ovdje
     updateItemMicState(sectionId, itemIdx, "idle");
   }
 }
@@ -1825,14 +1836,19 @@ async function startGroqRecording(sectionId, target) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
+    const rec = { section_id: sectionId, target, mediaRecorder: mr, chunks, warmingUp: true };
     mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
+      // Očisti SAMO ako je ovo još aktivno snimanje — korisnik je možda u međuvremenu
+      // pokrenuo novo u drugoj sekciji (bezuslovni null bi pregazio referencu na njega
+      // → "zombi" recorder koji drži mikrofon i ne može se zaustaviti).
+      if (STATE.recording === rec) STATE.recording = null;
       await processGroqRecording(sectionId, target, chunks, mr.mimeType);
     };
     // Pokreni snimanje ODMAH — tako MediaRecorder uhvati i 500ms warmup tišine
     mr.start();
-    STATE.recording = { section_id: sectionId, target, mediaRecorder: mr, chunks, warmingUp: true };
+    STATE.recording = rec;
     // UI: "Pripremam..." pa nakon 500ms "Snima"
     updateMicButtonState(sectionId, "preparing");
     setTimeout(() => {
@@ -1877,7 +1893,8 @@ async function processGroqRecording(sectionId, target, chunks, mimeType) {
     toast("Transkripcija greška: " + err.message, "error");
     console.error(err);
   } finally {
-    STATE.recording = null;
+    // STATE.recording čisti mr.onstop (guarded) — ovdje bi bezuslovni null
+    // pregazio eventualno novo snimanje pokrenuto tokom transkripcije.
     updateMicButtonState(sectionId, "idle");
   }
 }

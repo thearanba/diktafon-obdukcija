@@ -92,7 +92,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun configureWebView() {
-        WebView.setWebContentsDebuggingEnabled(true) // chrome://inspect za testiranje
+        // chrome://inspect debugging ISKLJUČEN: distribuirani APK je debug-potpisan pa
+        // BuildConfig.DEBUG gate ne pomaže, a sadržaj (imena pokojnika, KT brojevi,
+        // draftovi) je osjetljiv — uz uključen USB debugging bio bi čitljiv sa računara.
+        // Za testiranje privremeno vratiti na true.
+        WebView.setWebContentsDebuggingEnabled(false)
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true

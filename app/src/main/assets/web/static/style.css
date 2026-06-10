@@ -1201,12 +1201,17 @@ button {
   color: var(--text);
   padding: 12px 20px;
   border-radius: 8px;
-  z-index: 20;
+  z-index: 500;  /* iznad fokus-trake (300) i fs-overlay-a (400), ispod dijaloga (600) */
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   max-width: 90%;
   text-align: center;
 }
 .toast.hidden { display: none; }
+/* U fokus-modu donja traka (~110px + safe area) bi prekrila toast na bottom:30px —
+   digni ga iznad trake da se "Transkripcija ✓" i greške vide */
+body.has-fullscreen .toast {
+  bottom: calc(150px + env(safe-area-inset-bottom));
+}
 
 /* === Vlastiti dijalog (uiConfirm / uiPrompt) === */
 .dlg-overlay {
