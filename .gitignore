@@ -12,3 +12,5 @@ app/build/
 *.apk
 /keystore/
 !**/wrapper/gradle-wrapper.jar
+__pycache__/
+*.pyc
