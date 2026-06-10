@@ -818,13 +818,21 @@ async function toggleOkolnostiMic(btn) {
       setOkolnostiMicState(btn, "processing");
       try {
         const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+        if (blob.size < MIN_AUDIO_BYTES) {
+          toast("Snimak prekratak (slučajan klik?) — ništa nije poslano", "error");
+          return;  // finally ispod vraća dugme na idle
+        }
         const fd = new FormData();
         fd.append("audio", blob, "audio.webm");
         fd.append("section_id", "okolnosti");
         const res = await api("/api/transcribe", { method: "POST", body: fd });
-        appendToOkolnosti(res.text);
-        buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
-        toast("Transkripcija ✓", "success");
+        if (!(res.text || "").trim()) {
+          toast("Nije prepoznat govor (tišina/prekratko) — pokušaj ponovo", "error");
+        } else {
+          appendToOkolnosti(res.text);
+          buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
+          toast("Transkripcija ✓", "success");
+        }
       } catch (err) {
         toast("Transkripcija greška: " + err.message, "error");
       } finally {
@@ -1713,17 +1721,26 @@ async function startItemRecording(sectionId, itemIdx) {
 async function processGroqItemRecording(sectionId, itemIdx, chunks, mimeType) {
   updateItemMicState(sectionId, itemIdx, "processing");
   const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+  if (blob.size < MIN_AUDIO_BYTES) {
+    toast("Snimak prekratak (slučajan klik?) — ništa nije poslano", "error");
+    updateItemMicState(sectionId, itemIdx, "idle");
+    return;
+  }
   const fd = new FormData();
   fd.append("audio", blob, "audio.webm");
   fd.append("section_id", sectionId);
   try {
     const res = await api("/api/transcribe", { method: "POST", body: fd });
-    // Sačuvaj original Whisper output za potencijalno učenje korekcija
-    const key = `item:${sectionId}:${itemIdx}:raw`;
-    STATE.whisperOriginals[key] = res.raw_whisper || res.text;
-    appendToItem(sectionId, itemIdx, "raw", res.text);
-    buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
-    toast("Transkripcija ✓", "success");
+    if (!(res.text || "").trim()) {
+      toast("Nije prepoznat govor (tišina/prekratko) — pokušaj ponovo", "error");
+    } else {
+      // Sačuvaj original Whisper output za potencijalno učenje korekcija
+      const key = `item:${sectionId}:${itemIdx}:raw`;
+      STATE.whisperOriginals[key] = res.raw_whisper || res.text;
+      appendToItem(sectionId, itemIdx, "raw", res.text);
+      buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
+      toast("Transkripcija ✓", "success");
+    }
   } catch (err) {
     toast("Transkripcija greška: " + err.message, "error");
   } finally {
@@ -1868,6 +1885,10 @@ async function startGroqRecording(sectionId, target) {
   }
 }
 
+// Snimak manji od ovoga je gotovo sigurno slučajan klik (ni sekunda zvuka) —
+// Whisper na takvom ulazu halucinira; ne šalji ga uopšte.
+const MIN_AUDIO_BYTES = 4096;
+
 function pickMimeType() {
   const types = [
     "audio/webm;codecs=opus",
@@ -1884,17 +1905,27 @@ function pickMimeType() {
 async function processGroqRecording(sectionId, target, chunks, mimeType) {
   updateMicButtonState(sectionId, "processing");
   const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+  if (blob.size < MIN_AUDIO_BYTES) {
+    toast("Snimak prekratak (slučajan klik?) — ništa nije poslano", "error");
+    updateMicButtonState(sectionId, "idle");
+    return;
+  }
   const fd = new FormData();
   fd.append("audio", blob, "audio.webm");
   fd.append("section_id", sectionId);
   try {
     const res = await api("/api/transcribe", { method: "POST", body: fd });
-    // Sačuvaj original Whisper output za potencijalno učenje korekcija
-    const key = `single:${sectionId}:${target}`;
-    STATE.whisperOriginals[key] = res.raw_whisper || res.text;
-    appendToSection(sectionId, target, res.text);
-    buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
-    toast("Transkripcija gotova ✓", "success");
+    if (!(res.text || "").trim()) {
+      // Fantom-filter na serveru ili tišina — ne diraj tekst i NE uči korekcije iz ovoga
+      toast("Nije prepoznat govor (tišina/prekratko) — pokušaj ponovo", "error");
+    } else {
+      // Sačuvaj original Whisper output za potencijalno učenje korekcija
+      const key = `single:${sectionId}:${target}`;
+      STATE.whisperOriginals[key] = res.raw_whisper || res.text;
+      appendToSection(sectionId, target, res.text);
+      buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
+      toast("Transkripcija gotova ✓", "success");
+    }
   } catch (err) {
     toast("Transkripcija greška: " + err.message, "error");
     console.error(err);
@@ -2118,6 +2149,8 @@ async function generateReport() {
       return;
     }
   }
+  // (QA provjera praznih sekcija NAMJERNO ne postoji: kod spoljašnjeg pregleda
+  //  većina sekcija legitimno ostaje na standardnom template tekstu.)
   const btn = $("#btn-generate");
   btn.disabled = true;
   const old = btn.textContent;

@@ -10,6 +10,7 @@ ekvivalent, usage tokeni, itd.) ali kao obične dict-ove.
 """
 import json
 import ssl
+import time
 import uuid
 import urllib.request
 import urllib.error
@@ -53,6 +54,33 @@ class ApiError(Exception):
         super().__init__(f"[{status}] {message}")
 
 
+# HTTP statusi vrijedni ponovnog pokušaja (prolazni): rate limit, serverske greške,
+# Anthropic 529 "overloaded".
+RETRYABLE_STATUSES = (429, 500, 502, 503, 504, 529)
+RETRY_BACKOFF_S = 1.5
+
+
+def _urlopen_retry(req, timeout):
+    """urlopen sa JEDNIM retry-em za prolazne greške (429/5xx/timeout/prekid mreže).
+
+    Na terenu sa slabim signalom jedan timeout inače znači izgubljen klik
+    (diktat/merge se mora ručno ponoviti). Tijelo zahtjeva su bytes pa je
+    ponovno slanje bezbjedno. HTTPError se provjerava PRIJE OSError grane
+    (HTTPError je podklasa URLError/OSError).
+    """
+    try:
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+    except urllib.error.HTTPError as e:
+        if e.code not in RETRYABLE_STATUSES:
+            raise
+        time.sleep(RETRY_BACKOFF_S)
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+    except OSError:
+        # URLError, socket.timeout/TimeoutError, ConnectionReset... — sve mrežno
+        time.sleep(RETRY_BACKOFF_S)
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+
+
 # === Anthropic / Claude ===
 
 def claude_messages(api_key: str, model: str, system, messages: list,
@@ -85,13 +113,15 @@ def claude_messages(api_key: str, model: str, system, messages: list,
     req.add_header("User-Agent", USER_AGENT)
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
+        with _urlopen_retry(req, timeout) as resp:
             body = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:500]
         raise ApiError(e.code, f"Anthropic: {detail}")
     except urllib.error.URLError as e:
         raise ApiError(0, f"Mrežna greška (Anthropic): {e.reason}")
+    except OSError as e:
+        raise ApiError(0, f"Mrežna greška (Anthropic): {e}")
 
     obj = json.loads(body)
     # Spoji sve text blokove iz content niza
@@ -174,13 +204,15 @@ def groq_transcribe(api_key: str, audio_bytes: bytes, filename: str,
     req.add_header("User-Agent", USER_AGENT)
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
+        with _urlopen_retry(req, timeout) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:500]
         raise ApiError(e.code, f"Groq: {detail}")
     except urllib.error.URLError as e:
         raise ApiError(0, f"Mrežna greška (Groq): {e.reason}")
+    except OSError as e:
+        raise ApiError(0, f"Mrežna greška (Groq): {e}")
 
     obj = json.loads(raw)
     return (obj.get("text") or "").strip()

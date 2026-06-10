@@ -41,7 +41,7 @@ DRAFTS_DIR = DATA_DIR / "drafts"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 
-CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
+CLAUDE_MODEL = "claude-sonnet-4-6"
 
 # === Few-shot primjeri ===
 EXAMPLES_BY_SECTION: dict = {}
@@ -107,6 +107,34 @@ def whisper_prompt_for(section_id: str) -> str:
     if terms:
         return f"{WHISPER_BASE_TERMS} Termini za ovaj dio: {terms}"
     return WHISPER_BASE_TERMS
+
+
+# Whisper na tišini / vrlo kratkom snimku zna halucinirati fraze iz YouTube titlova
+# ("Hvala što ste gledali", "Pretplatite se"...). Filtriramo SAMO kad je cijeli
+# transkript jedna od poznatih fraza — usred stvarne diktacije se ne dira.
+WHISPER_PHANTOM_PHRASES = (
+    "hvala vam što ste gledali", "hvala što ste gledali", "hvala na gledanju",
+    "hvala vam na gledanju", "hvala vam što ste gledali ovaj video",
+    "hvala što ste gledali video", "hvala vam", "hvala",
+    "pretplatite se", "pretplatite se na kanal", "pretplatite se na naš kanal",
+    "lajkujte i pretplatite se", "do sljedećeg videa", "vidimo se u sljedećem videu",
+    "uživajte", "titlovi by", "prijevod i titlovi", "prevod i obrada",
+)
+
+
+def _phantom_norm(t: str) -> str:
+    t = (t or "").lower()
+    t = (t.replace("š", "s").replace("đ", "dj").replace("č", "c")
+          .replace("ć", "c").replace("ž", "z"))
+    return re.sub(r"[^a-z0-9 ]+", " ", t).strip()
+
+
+_PHANTOM_NORM_SET = {_phantom_norm(p) for p in WHISPER_PHANTOM_PHRASES}
+
+
+def is_whisper_phantom(text: str) -> bool:
+    n = re.sub(r"\s+", " ", _phantom_norm(text))
+    return (not n) or (n in _PHANTOM_NORM_SET)
 
 
 def select_examples(section_id: str, count: int = 4) -> list:
@@ -267,6 +295,9 @@ def ep_transcribe(payload):
         model="whisper-large-v3", language="hr",
         prompt=whisper_prompt_for(section_id), temperature="0",
     )
+    if is_whisper_phantom(raw_text):
+        # Tišina/prekratak snimak — fantomski tekst ne smije ući u zapisnik
+        return {"text": "", "raw_whisper": raw_text, "phantom": True}
     corrected = apply_corrections(raw_text)
     return {"text": corrected, "raw_whisper": raw_text}
 
