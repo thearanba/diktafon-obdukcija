@@ -6,6 +6,8 @@
     <!-- MODIFY_AUDIO_SETTINGS: traži se uz RECORD_AUDIO za getUserMedia/WebRTC mikrofon u WebView-u -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- VIBRATE: haptic potvrda start/stop snimanja i stigle transkripcije (navigator.vibrate) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

@@ -507,6 +507,23 @@ body.has-fullscreen { overflow: hidden; }
   box-shadow: 0 -4px 14px rgba(0,0,0,0.4);
 }
 .focus-nav.show { display: flex; }
+/* Timer snimanja — crveni badge iznad fokus-trake, vidljiv samo dok mikrofon snima */
+.rec-timer {
+  display: none;
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--record);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 14px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+}
+.rec-timer.show { display: block; }
 .focus-row { display: flex; align-items: center; gap: 8px; }
 .focus-prevnext .focus-side { flex: 1; }
 .focus-actions { justify-content: center; }

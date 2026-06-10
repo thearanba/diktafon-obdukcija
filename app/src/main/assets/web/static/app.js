@@ -814,7 +814,7 @@ async function toggleOkolnostiMic(btn) {
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
       // Guarded clear — vidi komentar u startGroqRecording (zombi mikrofon)
-      if (STATE.recording === rec) STATE.recording = null;
+      if (STATE.recording === rec) { STATE.recording = null; stopRecTimer(); }
       setOkolnostiMicState(btn, "processing");
       try {
         const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
@@ -823,6 +823,7 @@ async function toggleOkolnostiMic(btn) {
         fd.append("section_id", "okolnosti");
         const res = await api("/api/transcribe", { method: "POST", body: fd });
         appendToOkolnosti(res.text);
+        buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
         toast("Transkripcija ✓", "success");
       } catch (err) {
         toast("Transkripcija greška: " + err.message, "error");
@@ -832,6 +833,7 @@ async function toggleOkolnostiMic(btn) {
     };
     mr.start();
     STATE.recording = rec;
+    startRecTimer();
     setOkolnostiMicState(btn, "recording");
   } catch (err) {
     toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
@@ -1690,11 +1692,12 @@ async function startItemRecording(sectionId, itemIdx) {
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
       // Guarded clear — vidi komentar u startGroqRecording (zombi mikrofon)
-      if (STATE.recording === rec) STATE.recording = null;
+      if (STATE.recording === rec) { STATE.recording = null; stopRecTimer(); }
       await processGroqItemRecording(sectionId, itemIdx, chunks, mr.mimeType);
     };
     mr.start();
     STATE.recording = rec;
+    startRecTimer();
     updateItemMicState(sectionId, itemIdx, "preparing");
     setTimeout(() => {
       if (STATE.recording && STATE.recording.mediaRecorder === mr) {
@@ -1719,6 +1722,7 @@ async function processGroqItemRecording(sectionId, itemIdx, chunks, mimeType) {
     const key = `item:${sectionId}:${itemIdx}:raw`;
     STATE.whisperOriginals[key] = res.raw_whisper || res.text;
     appendToItem(sectionId, itemIdx, "raw", res.text);
+    buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
     toast("Transkripcija ✓", "success");
   } catch (err) {
     toast("Transkripcija greška: " + err.message, "error");
@@ -1843,12 +1847,13 @@ async function startGroqRecording(sectionId, target) {
       // Očisti SAMO ako je ovo još aktivno snimanje — korisnik je možda u međuvremenu
       // pokrenuo novo u drugoj sekciji (bezuslovni null bi pregazio referencu na njega
       // → "zombi" recorder koji drži mikrofon i ne može se zaustaviti).
-      if (STATE.recording === rec) STATE.recording = null;
+      if (STATE.recording === rec) { STATE.recording = null; stopRecTimer(); }
       await processGroqRecording(sectionId, target, chunks, mr.mimeType);
     };
     // Pokreni snimanje ODMAH — tako MediaRecorder uhvati i 500ms warmup tišine
     mr.start();
     STATE.recording = rec;
+    startRecTimer();
     // UI: "Pripremam..." pa nakon 500ms "Snima"
     updateMicButtonState(sectionId, "preparing");
     setTimeout(() => {
@@ -1888,6 +1893,7 @@ async function processGroqRecording(sectionId, target, chunks, mimeType) {
     const key = `single:${sectionId}:${target}`;
     STATE.whisperOriginals[key] = res.raw_whisper || res.text;
     appendToSection(sectionId, target, res.text);
+    buzz([40, 80, 40]);  // dvostruki impuls: transkript je stigao
     toast("Transkripcija gotova ✓", "success");
   } catch (err) {
     toast("Transkripcija greška: " + err.message, "error");
@@ -1919,16 +1925,19 @@ function startWebSpeechRecording(sectionId, target) {
   rec.onerror = (e) => {
     toast("Web Speech greška: " + e.error, "error");
     STATE.recording = null;
+    stopRecTimer();
     updateMicButtonState(sectionId, "idle");
   };
   rec.onend = () => {
     if (STATE.recording && STATE.recording.section_id === sectionId) {
       STATE.recording = null;
+      stopRecTimer();
       updateMicButtonState(sectionId, "idle");
     }
   };
   rec.start();
   STATE.recording = { section_id: sectionId, target, webSpeech: rec };
+  startRecTimer();
   updateMicButtonState(sectionId, "recording");
 }
 
@@ -1939,6 +1948,53 @@ function stopRecording() {
   } else if (STATE.recording.webSpeech) {
     STATE.recording.webSpeech.stop();
   }
+}
+
+// === Timer snimanja + vibracija (rad bez gledanja u ekran) ===
+let recTimerInterval = null;
+
+function buzz(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
+}
+
+function recElapsed() {
+  if (!STATE.recordingStartTs) return "";
+  const s = Math.floor((Date.now() - STATE.recordingStartTs) / 1000);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+function startRecTimer() {
+  STATE.recordingStartTs = Date.now();
+  clearInterval(recTimerInterval);
+  recTimerInterval = setInterval(updateRecTimerLabels, 1000);
+  updateRecTimerLabels();
+  buzz(80);  // kratka potvrda: snimanje je krenulo
+}
+
+function stopRecTimer() {
+  clearInterval(recTimerInterval);
+  recTimerInterval = null;
+  STATE.recordingStartTs = null;
+  const badge = document.getElementById("rec-timer");
+  if (badge) badge.classList.remove("show");
+  buzz(40);  // potvrda: snimanje stalo
+}
+
+function updateRecTimerLabels() {
+  const t = recElapsed();
+  const badge = document.getElementById("rec-timer");
+  if (badge) {
+    const show = !!STATE.recording && !!t;
+    badge.classList.toggle("show", show);
+    if (show) badge.textContent = "● " + t;
+  }
+  if (!STATE.recording || !t) return;
+  // Inline mic dugmad (pilule sa tekstom) dobiju vrijeme u labelu
+  document.querySelectorAll(".btn-mic.recording .mic-label").forEach(l => {
+    l.textContent = "Zaustavi · " + t;
+  });
+  const om = document.getElementById("okolnosti-mic");
+  if (om && om.classList.contains("recording")) om.textContent = "⏹ " + t;
 }
 
 function updateMicButtonState(sectionId, state) {
@@ -2169,11 +2225,31 @@ async function switchToDraft(id) {
   toast(`Učitan: ${data.name}`, "success");
 }
 
+// Da li draft ima STVARNI sadržaj? (Render sam kreira prazne objekte za svaku sekciju
+// u STATE.sections, a izuzeti_checked je objekat — golo brojanje ključeva bi pitanje
+// "novi draft?" prikazivalo i za potpuno prazan draft.)
+function draftHasContent() {
+  for (const k in STATE.header) {
+    const v = STATE.header[k];
+    if (typeof v === "string" && v.trim()) return true;
+    if (v === true) return true;
+    if (v && typeof v === "object" && Object.values(v).some(
+        x => x === true || (typeof x === "string" && x.trim()))) return true;
+  }
+  for (const sid in STATE.sections) {
+    const s = STATE.sections[sid];
+    if (!s) continue;
+    if (typeof s === "string" && s.trim()) return true;
+    if (Array.isArray(s.items)) {
+      if (s.items.some(it => ((it.raw || "") + (it.final || "")).trim())) return true;
+    } else if (((s.raw || "") + (s.final || "")).trim()) return true;
+  }
+  return false;
+}
+
 async function newDraft() {
   // Pitaj samo ako trenutni draft ima sadržaj
-  const hasContent = Object.keys(STATE.header).some(k => STATE.header[k])
-    || Object.keys(STATE.sections).length > 0;
-  if (hasContent && !(await uiConfirm("Trenutni draft biće sačuvan u listi.",
+  if (draftHasContent() && !(await uiConfirm("Trenutni draft biće sačuvan u listi.",
       { title: "Otvoriti novi prazan draft?", okText: "Otvori novi" }))) {
     return;
   }
@@ -2331,23 +2407,9 @@ function flashSavedIndicator() {
   savedFlashTimer = setTimeout(() => dot.classList.remove("saved"), 800);
 }
 
-// === Polling: provjeri server za izmjene ===
-const POLL_INTERVAL_MS = 10000;  // 10 sekundi
-let pollTimer = null;
-
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(pollServerForChanges, POLL_INTERVAL_MS);
-}
-
-async function pollServerForChanges() {
-  // STANDALONE aplikacija (jedan uređaj): nema drugog uređaja koji bi mijenjao drafte,
-  // pa nema stvarnog konflikta. Uklonjena je provjera „server ima noviju verziju"
-  // (lažni baner) i nasilni re-render otvorenog modala. Ostaje samo osvježavanje keša
-  // liste draftova (bezopasno, ne dira DOM).
-  if (document.hidden) return;
-  await refreshDraftsFromServer();
-}
+// (Polling svakih 10s UKLONJEN — standalone app je jedini pisac draftova, pa je
+//  periodično buđenje Python-a radi čitanja vlastitih fajlova samo trošilo bateriju.
+//  Keš liste se osvježava pri startu i pri svakom upisu kroz persistDraft.)
 
 // === Konflikt banner ===
 function showConflictBanner(draftId, serverTs) {
@@ -2456,9 +2518,6 @@ async function init() {
   renderHeaderForm();
   renderSections();
   updateDraftIndicator();
-
-  // Pokreni polling za live sync
-  startPolling();
 
   if (!STATE.header.ime_prezime) {
     $("#header-card").classList.add("open");

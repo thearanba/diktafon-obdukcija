@@ -1,7 +1,7 @@
 # Diktafon obdukcija — HANDOFF (nastavak u novoj sesiji)
 
 > Samostalan pregled stanja projekta da se rad nastavi bez gubitka konteksta.
-> Zadnji build: **#33** (= kod #32; #33 je samo re-trigger nakon prelaska na public). Datum: 2026-06-09.
+> Zadnji build: **#35** (audit fixevi). Datum: 2026-06-09.
 
 ## 1. Šta je ovo
 Native Android aplikacija (Samsung Galaxy S25 Ultra) za diktiranje obdukcionog
@@ -52,6 +52,8 @@ zapisnika prof. dr. Adisa Salihbegovića. Port desktop alata `diktafon-obdukcija
 - **Topbar:** prikazuje **ime otvorenog nalaza** (ne ime app); ⋮ meni = Generiši/Drafti/Novi/Reset/Postavke/Osvježi.
 - **Whisper tačnost (#31):** prompt **PO SEKCIJI** (`WHISPER_SECTION_TERMS` + `whisper_prompt_for(section_id)`), termini izvučeni iz **`OneDrive\Sudska medicina\Baza slučajeva.xlsx`** list „Obdukcije" (kol. Spoljašnji/Unutrašnji pregled, Uzrok smrti). `corrections.py` proširen split-fixevima.
 - **Bug fix (#32):** kucanje ne skače na vrh; uklonjen forsirani focus-skrol.
+- **Vlastiti modali (#34):** `uiConfirm`/`uiPrompt` u stilu app-a umjesto nativnih `confirm`/`prompt` (nema više „The page at https://appassets…"); crveno „Obriši" za destruktivno.
+- **Audit fixevi (#35):** (1) `bindSectionEvents(scope)` — rerenderMultiBody više NE duplira listenere na netaknute kartice (dupli Claude pozivi!); (2) zombi-mikrofon: guarded clear `STATE.recording` u svim `onstop` (poredi sa `rec`), okolnosti-mic zaustavlja sekcijsko snimanje; (3) toast z-index 500 + `body.has-fullscreen .toast{bottom:150px}` (bio prekriven fokus-trakom); (4) `setWebContentsDebuggingEnabled(false)` — privatnost (debug-potpisan APK, BuildConfig.DEBUG ne pomaže); (5) `draftHasContent()` — „novi draft?" pita samo uz stvaran sadržaj; (6) uklonjen 10s polling (baterija); (7) timer snimanja: crveni badge `#rec-timer` iznad fokus-trake + vrijeme u inline mic labelima; (8) vibracija (`buzz()`, VIBRATE permission): 80ms start, 40ms stop, [40,80,40] transkript stigao.
 
 ## 5. Gotchas (da se ne ponavljaju greške)
 - **JS balans-check:** `parens diff +1` je **LAŽNI alarm** (string literal `"("` u `shortTitle`). Braces/brackets moraju biti OK; backtici parni. Provjeri deltu izmjena, ne apsolut.
