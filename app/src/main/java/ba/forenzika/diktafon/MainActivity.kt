@@ -345,7 +345,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        webView.destroy()
+        // Guard-put (preusmjerenje na LoginActivity) završi PRIJE inicijalizacije webView-a —
+        // bezuslovni destroy() bi tu bacio UninitializedPropertyAccessException (pad pri startu)
+        if (::webView.isInitialized) webView.destroy()
         pyExecutor.shutdownNow()
         super.onDestroy()
     }

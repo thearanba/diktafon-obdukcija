@@ -34,7 +34,9 @@ object SecurePrefs {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Throwable (ne samo Exception): i LinkageError iz Tink/Keystore sloja
+                // treba da završi u fallback-u, ne kao pad aplikacije
                 Log.e(MainActivity.TAG, "SecurePrefs: Keystore fail, fallback na plain: ${e.message}", e)
                 appCtx.getSharedPreferences(NAME + "_fallback", Context.MODE_PRIVATE)
             }
