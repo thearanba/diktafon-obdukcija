@@ -863,7 +863,7 @@ async function cleanupOkolnosti(btn) {
     const res = await api("/api/cleanup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, section_title: label, case_context: caseContext() }),
+      body: JSON.stringify({ text, section_title: label, case_context: caseContext("okolnosti") }),
     });
     STATE.header.okolnosti = (res.text || "").trim();
     const ta = document.querySelector('textarea[data-header-id="okolnosti"]');
@@ -1445,7 +1445,7 @@ function computeAge(rodjenStr, refStr) {
   return (age >= 0 && age <= 120) ? age : null;
 }
 
-function caseContext() {
+function caseContext(excludeSid) {
   const ctx = {};
   const s = (STATE.header.spol || "").trim().toLowerCase();
   if (s.startsWith("m")) ctx.spol = "muški";
@@ -1455,6 +1455,18 @@ function caseContext() {
     ctx.dob_godina = dob;
     if ((STATE.header.rodjen || "").trim()) ctx.rodjen = STATE.header.rodjen.trim();
     if ((STATE.header.pronadjen || "").trim()) ctx.pronadjen = STATE.header.pronadjen.trim();
+  }
+  // Stanje leša (trulež, mumifikacija...) iz finalnog teksta Konstitucije — šalje se
+  // SAMO ako odstupa od standardnog template teksta (običan leš = 0 dodatnih tokena)
+  // i ne pri spajanju same te sekcije.
+  if (excludeSid !== "s1_konstitucija") {
+    const konDef = getSectionDef("s1_konstitucija");
+    const kon = getSection("s1_konstitucija");
+    const txt = (kon.final || "").trim();
+    const tpl = konDef ? (konDef.template_text || konDef.default || "").trim() : "";
+    if (txt && txt !== tpl) {
+      ctx.stanje_lesa = txt.length > 240 ? txt.slice(0, 240) + "…" : txt;
+    }
   }
   return ctx;
 }
@@ -1493,7 +1505,7 @@ async function mergeSection(sectionId) {
         is_multi: !!sectionDef.multi,
         is_numbered: !!sectionDef.numbered,
         hint: sectionDef.hint || "",
-        case_context: caseContext(),
+        case_context: caseContext(sectionId),
       }),
     });
     sec.final = res.text;
@@ -1857,7 +1869,7 @@ async function mergeItem(sectionId, itemIdx) {
         is_multi: true,  // Claude tretira kao listu
         is_numbered: false,  // Numeracija nije po stavki — radi je generator za .docx
         hint: def.hint || "",
-        case_context: caseContext(),
+        case_context: caseContext(sectionId),
       }),
     });
     item.final = res.text.trim();
@@ -2149,7 +2161,7 @@ async function cleanupSection(sectionId) {
         text: ta.value,
         section_id: sectionId,
         section_title: sec ? sec.title : "",
-        case_context: caseContext(),
+        case_context: caseContext(sectionId),
       }),
     });
     ta.value = res.text;
@@ -2163,6 +2175,72 @@ async function cleanupSection(sectionId) {
     btn.textContent = oldLabel;
     btn.disabled = false;
   }
+}
+
+// Sekcije kao { section_id: string } — TAČNO ono što bi ušlo u .docx
+// (final ili raw fallback; multi = stavke spojene newline-ovima).
+// Koriste generateReport i provjeriZapisnik.
+function collectFlatSections() {
+  const flat = {};
+  for (const sid in STATE.sections) {
+    const s = STATE.sections[sid];
+    if (typeof s === "string") {
+      if (s.trim()) flat[sid] = s;
+    } else if (s && Array.isArray(s.items)) {
+      const lines = s.items
+        .map(it => (it.final || it.raw || "").trim())
+        .filter(Boolean);
+      if (lines.length) flat[sid] = lines.join("\n");
+    } else if (s && (s.final || s.raw)) {
+      flat[sid] = s.final || s.raw;
+    }
+  }
+  return flat;
+}
+
+// === Provjera konzistentnosti cijelog nalaza (ništa ne mijenja) ===
+let provjeraRunning = false;
+async function provjeriZapisnik() {
+  if (provjeraRunning) return;
+  if (!STATE.config.claude_available) { toast("Claude nije konfigurisan", "error"); return; }
+  flushAutoSave();
+  const flat = collectFlatSections();
+  if (!Object.keys(flat).length) { toast("Nema sadržaja za provjeru"); return; }
+  provjeraRunning = true;
+  toast("🔎 Provjeravam zapisnik…");
+  try {
+    const res = await nativeCall("provjera", {
+      sections: flat,
+      case_context: caseContext(),
+    });
+    if (res && res.__error) throw new Error(res.detail || ("status " + res.status));
+    showTextModal("🔎 Provjera zapisnika", res.text || "Nema odgovora.");
+  } catch (err) {
+    toast("Provjera: " + err.message, "error");
+  } finally {
+    provjeraRunning = false;
+  }
+}
+
+// Generički modal za prikaz teksta (rezultat provjere i sl.)
+function showTextModal(title, text) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>${escapeHtml(title)}</h2>
+        <button class="modal-close" data-close-modal>✕</button>
+      </div>
+      <div class="modal-body"><div class="text-modal-body">${escapeHtml(text)}</div></div>
+      <div class="modal-footer">
+        <button class="btn-primary" data-close-modal>Zatvori</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelectorAll("[data-close-modal]").forEach(b =>
+    b.addEventListener("click", () => overlay.remove()));
 }
 
 // === Generate ===
@@ -2212,24 +2290,7 @@ async function generateReport() {
   const old = btn.textContent;
   btn.textContent = "⏳ Generišem...";
 
-  // Server očekuje sections kao { section_id: string }.
-  // Single sekcije: pošalji final ili raw fallback.
-  // Multi sekcije: spoji items u newline-joined string (final ili raw fallback po stavci).
-  const flatSections = {};
-  for (const sid in STATE.sections) {
-    const s = STATE.sections[sid];
-    if (typeof s === "string") {
-      flatSections[sid] = s;
-    } else if (s && Array.isArray(s.items)) {
-      // Multi: skupi po stavki najbolji dostupni tekst
-      const lines = s.items
-        .map(it => (it.final || it.raw || "").trim())
-        .filter(Boolean);
-      if (lines.length) flatSections[sid] = lines.join("\n");
-    } else if (s && (s.final || s.raw)) {
-      flatSections[sid] = s.final || s.raw;
-    }
-  }
+  const flatSections = collectFlatSections();
   try {
     // Direktan poziv Python-a (bez servera). Vraća {filename, docx_b64}.
     const res = await nativeCall("generate", { header: STATE.header, sections: flatSections });
@@ -2663,6 +2724,11 @@ async function init() {
       menu.classList.toggle("show");
     });
     document.addEventListener("click", () => menu.classList.remove("show"));
+    const mProvjera = $("#menu-provjera");
+    if (mProvjera) mProvjera.addEventListener("click", () => {
+      menu.classList.remove("show");
+      provjeriZapisnik();
+    });
     const mExport = $("#menu-export");
     if (mExport) mExport.addEventListener("click", () => {
       menu.classList.remove("show");

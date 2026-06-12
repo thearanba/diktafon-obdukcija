@@ -1230,6 +1230,14 @@ body.has-fullscreen .toast {
   bottom: calc(150px + env(safe-area-inset-bottom));
 }
 
+/* Tekstualni modal (rezultat provjere zapisnika) */
+.text-modal-body {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 10px 8px;
+}
+
 /* === Vlastiti dijalog (uiConfirm / uiPrompt) === */
 .dlg-overlay {
   position: fixed;

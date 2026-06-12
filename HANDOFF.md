@@ -54,6 +54,13 @@ zapisnika prof. dr. Adisa Salihbegovića. Port desktop alata `diktafon-obdukcija
 - **Bug fix (#32):** kucanje ne skače na vrh; uklonjen forsirani focus-skrol.
 - **Vlastiti modali (#34):** `uiConfirm`/`uiPrompt` u stilu app-a umjesto nativnih `confirm`/`prompt` (nema više „The page at https://appassets…"); crveno „Obriši" za destruktivno.
 - **Audit fixevi (#35):** (1) `bindSectionEvents(scope)` — rerenderMultiBody više NE duplira listenere na netaknute kartice (dupli Claude pozivi!); (2) zombi-mikrofon: guarded clear `STATE.recording` u svim `onstop` (poredi sa `rec`), okolnosti-mic zaustavlja sekcijsko snimanje; (3) toast z-index 500 + `body.has-fullscreen .toast{bottom:150px}` (bio prekriven fokus-trakom); (4) `setWebContentsDebuggingEnabled(false)` — privatnost (debug-potpisan APK, BuildConfig.DEBUG ne pomaže); (5) `draftHasContent()` — „novi draft?" pita samo uz stvaran sadržaj; (6) uklonjen 10s polling (baterija); (7) timer snimanja: crveni badge `#rec-timer` iznad fokus-trake + vrijeme u inline mic labelima; (8) vibracija (`buzz()`, VIBRATE permission): 80ms start, 40ms stop, [40,80,40] transkript stigao.
+- **Kontekst v2 (#43):** (A) **stanje leša** — finalni tekst Konstitucije (skraćen na 240) ide u `case_context`
+  SAMO ako odstupa od template defaulta (običan leš = 0 dodatnih tokena) i ne pri spajanju te iste sekcije
+  (`caseContext(excludeSid)`); pravilo o truležnoj terminologiji se dodaje uslovno. (D) **„🔎 Provjeri zapisnik"**
+  u ⋮ meniju — `ep_provjera` šalje SVE flat sekcije + kontekst Claude-u (PROVJERA_SYSTEM: rod, L/D, kontradikcije,
+  template praznine, mišljenje↔nalaz, dob) → lista upozorenja u `showTextModal`, NIŠTA ne mijenja (~$0.02-0.03/klik).
+  Refaktor: `collectFlatSections()` dijele generate i provjera. ODBIJENO pri izboru: B (nalazi za mišljenje kontekst)
+  — korisnik nije izabrao; C (okolnosti kao kontekst) — rizik fabrikacije nalaza, preskočeno uz moju preporuku.
 - **Kontekst slučaja (#42) — pol i dob u merge:** sekcije se spajaju IZOLOVANO pa Claude nije znao pol
   (template default „muški" pobjeđivao i za žene) ni dob (iako zaglavlje ima datum rođenja). Sada: novo polje
   **„Pol"** u zaglavlju (quick dugmad muški/ženski; extract_naredba ga čita iz naredbe), **dob se računa** u JS

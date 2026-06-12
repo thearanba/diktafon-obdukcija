@@ -228,6 +228,51 @@ MERGE_SYSTEM_SINGLE = (
     "10. Vrati SAMO popunjen paragraf, bez objašnjenja, bez markdown-a, bez navodnika."
 )
 
+PROVJERA_SYSTEM = (
+    "Ti si pažljivi kontrolor obdukcionih zapisnika sudske medicine u BiH. Dobijaš "
+    "KOMPLETAN nalaz (sve sekcije) i kontekst slučaja. NIŠTA ne mijenjaš i ne prepravljaš — "
+    "vraćaš SAMO listu konkretnih upozorenja, jedno po redu, format: 'SEKCIJA — problem'.\n"
+    "Tražiš ISKLJUČIVO:\n"
+    "1. Rodno nesklađene oblike u odnosu na pol iz konteksta (muški/ženski leš, "
+    "pronađen/pronađena, kosmatost tipa...).\n"
+    "2. Lijevo/desno nedosljednosti za ISTU povredu/nalaz između sekcija.\n"
+    "3. Unutrašnje kontradikcije: 'kosti očuvane' uz prelom, 'bez stranog sadržaja' uz "
+    "opis sadržaja, 'glatke sjajne / jasne građe' uz truležne promjene.\n"
+    "4. Zaostale template praznine: 'oko  ml', 'oko cm', 'XX', 'dužine oko ,', dupli "
+    "razmaci na mjestu vrijednosti, nedovršene rečenice.\n"
+    "5. Mišljenje koje pominje povredu/nalaz kojeg NEMA u sekcijama nalaza, ili tešku "
+    "povredu iz nalaza koja očito nedostaje u mišljenju.\n"
+    "6. Nesklad dobi/datuma sa kontekstom.\n"
+    "NE komentariši stil, NE predlaži formulacije, NE izmišljaj probleme. Ako je sve "
+    "uredno, vrati tačno: 'Nema uočenih nedosljednosti.'"
+)
+
+
+def ep_provjera(payload):
+    """Provjera konzistentnosti CIJELOG nalaza — vraća listu upozorenja, ništa ne mijenja."""
+    if not ANTHROPIC_API_KEY:
+        raise ApiError(400, "Anthropic API ključ nije postavljen.")
+    sections = payload.get("sections") or {}
+    if not sections:
+        raise ApiError(400, "Nema sadržaja za provjeru.")
+    titles = {s["id"]: s["title"] for s in DICTATION_SECTIONS}
+    blocks = []
+    for s in DICTATION_SECTIONS:  # redoslijed zapisnika, ne dict-a
+        sid = s["id"]
+        txt = (sections.get(sid) or "").strip()
+        if txt:
+            blocks.append(f"== {titles.get(sid, sid)} ==\n{txt}")
+    ctx_block = _case_context_block(payload.get("case_context"))
+    user_msg = f"{ctx_block}ZAPISNIK PO SEKCIJAMA:\n\n" + "\n\n".join(blocks)
+    result = api_clients.claude_messages(
+        ANTHROPIC_API_KEY, CLAUDE_MODEL, PROVJERA_SYSTEM,
+        [{"role": "user", "content": user_msg}], max_tokens=1500,
+    )
+    u = result["usage"]
+    return {"text": result["text"],
+            "tokens_in": u["input_tokens"], "tokens_out": u["output_tokens"]}
+
+
 EXTRACT_NAREDBA_SYSTEM = (
     "Ti si asistent sudskom vještaku medicinske struke u BiH. "
     "Iz naredbe tužilaštva o obdukciji izvlačiš strukturisane podatke. "
@@ -277,17 +322,28 @@ def _case_context_block(ctx) -> str:
         if ctx.get("pronadjen"):
             extra.append(f"pronađen/a {ctx['pronadjen']}")
         parts.append(f"Dob: {int(dob)} godina" + (f" ({', '.join(extra)})" if extra else ""))
+    stanje = (ctx.get("stanje_lesa") or "").strip()
+    if stanje:
+        parts.append(f"Opšte stanje leša (iz sekcije Konstitucija): {stanje}")
     if not parts:
         return ""
+    rules = [
+        "- SVE rodno osjetljive oblike uskladi sa polom: 'muški/ženski leš' → odaberi tačan, "
+        "pronađen/pronađena, kosmatost polnog predjela muškog/ženskog tipa, padeži i participi.",
+        "- Ako paragraf ima mjesto za dob ('u dobi od __ godina') a diktacija je ne navodi, "
+        "upiši dob iz konteksta.",
+    ]
+    if stanje:
+        rules.append(
+            "- Ako stanje leša navodi truležne/posmrtne promjene (trulež, mumifikacija, "
+            "raskvašenost...), uskladi opise s tim (npr. 'truležno izmijenjeno tkivo' umjesto "
+            "'jasne građe i crteža') — ali NE dodaji nalaze koji nisu diktirani.")
+    rules.append("- Kontekst NE proširuj: ništa drugo iz njega ne izvodi niti dodaje.")
     return (
         "KONTEKST SLUČAJA (činjenice iz zaglavlja zapisnika — OBAVEZNO ih primijeni):\n- "
         + "\n- ".join(parts) + "\n"
         "Pravila konteksta:\n"
-        "- SVE rodno osjetljive oblike uskladi sa polom: 'muški/ženski leš' → odaberi tačan, "
-        "pronađen/pronađena, kosmatost polnog predjela muškog/ženskog tipa, padeži i participi.\n"
-        "- Ako paragraf ima mjesto za dob ('u dobi od __ godina') a diktacija je ne navodi, "
-        "upiši dob iz konteksta.\n"
-        "- Kontekst NE proširuj: ništa drugo iz njega ne izvodi niti dodaje.\n\n"
+        + "\n".join(rules) + "\n\n"
     )
 
 
@@ -596,6 +652,7 @@ _ROUTES = {
     "generate": ep_generate,
     "drafts_list": ep_drafts_list,
     "export_drafts": ep_export_drafts,
+    "provjera": ep_provjera,
     "draft_get": ep_draft_get,
     "draft_put": ep_draft_put,
     "draft_delete": ep_draft_delete,
