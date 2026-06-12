@@ -35,6 +35,37 @@ def _ensure_run_format_from_pPr(para):
 USER_CONTENT_HIGHLIGHT = "yellow"  # Word highlight color (named values only)
 
 
+# Oznake tužilaštava u tužilačkom broju (TCMS): T01–T10 = kantonalna tužilaštva FBiH
+# (broj prati broj kantona), T20 = Tužilaštvo BiH. Genitiv — ide u rečenicu
+# "Naredbom <tužilaštva> ... naložena je obdukcija".
+TUZILASTVA_GENITIV = {
+    "T01": "Kantonalnog tužilaštva Unsko-sanskog kantona",
+    "T02": "Kantonalnog tužilaštva Posavskog kantona",
+    "T03": "Kantonalnog tužilaštva Tuzlanskog kantona",
+    "T04": "Kantonalnog tužilaštva Zeničko-dobojskog kantona",
+    "T05": "Kantonalnog tužilaštva Bosansko-podrinjskog kantona Goražde",
+    "T06": "Kantonalnog tužilaštva Srednjobosanskog kantona",
+    "T07": "Kantonalnog tužilaštva Hercegovačko-neretvanskog kantona",
+    "T08": "Kantonalnog tužilaštva Zapadnohercegovačkog kantona",
+    "T09": "Kantonalnog Tužilaštva Kantona Sarajevo",
+    "T10": "Kantonalnog tužilaštva Kantona 10",
+    "T20": "Tužilaštva Bosne i Hercegovine",
+}
+
+
+def _tuzilastvo_genitiv(kt_full: str) -> str:
+    """Naziv tužilaštva (genitiv) izveden iz oznake u punom broju.
+
+    Bez oznake (goli/KTA broj iz starih draftova) → istorijski default Sarajevo.
+    Nepoznata T-oznaka → neutralno "Nadležnog tužilaštva" (bolje nego pogrešan kanton);
+    žuti highlight na broju ionako vodi oko vještaka na to mjesto pri pregledu.
+    """
+    m = re.match(r"^\s*(T\d{2})\b", (kt_full or "").upper())
+    if not m:
+        return TUZILASTVA_GENITIV["T09"]
+    return TUZILASTVA_GENITIV.get(m.group(1), "Nadležnog tužilaštva")
+
+
 def _full_kt(kt: str) -> str:
     """Puni tužilački broj za zapisnik/ime fajla.
 
@@ -261,7 +292,7 @@ def _fill_header_table(doc, header_data: dict):
     tuzilac = header_data.get("tuzilac", "")
     kt_broj_full = _full_kt(header_data.get("kt_broj", ""))
     _set_cell_lines_smart(cell_41, [
-        {"static": "Kantonalnog Tužilaštva Kantona Sarajevo"},
+        {"static": _tuzilastvo_genitiv(kt_broj_full)},
         {"label": "tužilac:", "value": tuzilac},
         {"label": "veza:", "value": kt_broj_full},
         {"static": "Naredbom tužioca naložena je obdukcija leša"},

@@ -239,7 +239,7 @@ Vrati ČIST JSON objekat sa ovim ključevima (svi su stringovi; ako podatak fali
   "rodjen": "DD.MM.YYYY. godine (formatiraj sa tačkama i sa 'godine' na kraju)",
   "pronadjen": "DD.MM.YYYY. godine (datum kad je tijelo pronađeno ili datum smrti)",
   "tuzilac": "Ime i prezime kantonalnog/okružnog tužioca koji je potpisao naredbu (npr. 'Zoran Ikonić')",
-  "kt_broj": "Tužilački broj BEZ 'T09 0' ali SA oznakom vrste predmeta TAČNO kako piše u naredbi — KTA/KT/KTN se razlikuju! (npr. 'T09 0 KTA 0207907 26' → 'KTA 0207907 26'; 'T09 0 KT 0123456 25' → 'KT 0123456 25')",
+  "kt_broj": "PUN tužilački broj TAČNO kako piše u naredbi, uključujući oznaku tužilaštva i vrstu predmeta (npr. 'T09 0 KTA 0207907 26', 'T03 0 KT 0123456 25'). Oznaka tužilaštva (T01-T10, T20...) i vrsta (KTA/KT/KTN) se NE smiju mijenjati ni izostavljati.",
   "okolnosti": "Kratak opis okolnosti slučaja iz naredbe — gdje, kako, kada je tijelo pronađeno (jedna do dvije rečenice, na bosanskom)"
 }
 
