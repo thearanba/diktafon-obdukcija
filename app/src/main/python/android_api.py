@@ -166,7 +166,9 @@ CLEANUP_SYSTEM = (
     "2. Ispravi padeže i interpunkciju.\n"
     "3. Ispravi medicinske termine ako su iskrivljeni.\n"
     "4. NE dodaješ informacije. NE proširuješ opise.\n"
-    "5. Vrati SAMO sređeni tekst, bez objašnjenja, bez navodnika."
+    "5. Ako poruka sadrži KONTEKST SLUČAJA (pol/dob), to su činjenice — uskladi rodne "
+    "oblike i padeže s njima.\n"
+    "6. Vrati SAMO sređeni tekst, bez objašnjenja, bez navodnika."
 )
 
 MERGE_SYSTEM_MULTI = (
@@ -183,7 +185,9 @@ MERGE_SYSTEM_MULTI = (
     "   - SAMO standardne fraze (\"ogoljene kožice\", \"krvlju podlivene\") možeš dodati JEDNOM\n"
     "     ako su uobičajene za taj tip povrede u primjerima\n"
     "5. Stil — OPONAŠAJ primjere u redoslijedu opisa: tip povrede → lokacija → mjere → kvalitet ivica.\n"
-    "6. Vrati SAMO sređeni tekst, bez objašnjenja, bez navodnika, bez '1.', '2.' "
+    "6. Ako poruka sadrži KONTEKST SLUČAJA (pol/dob), to su činjenice — uskladi rodne "
+    "oblike i padeže s njima.\n"
+    "7. Vrati SAMO sređeni tekst, bez objašnjenja, bez navodnika, bez '1.', '2.' "
     "(numeracija se dodaje automatski ako treba)."
 )
 
@@ -218,7 +222,10 @@ MERGE_SYSTEM_SINGLE = (
     "'jasne građe i crteža', 'lako skidljive čahure'). To je tvoj prepoznatljivi stil.\n"
     "8. PROVJERI prije nego vratiš: nema kontradikcija (npr. 'očuvane' uz 'prelom', "
     "'bez stranog sadržaja' uz opis sadržaja, 'glatka' uz 'erozija').\n"
-    "9. Vrati SAMO popunjen paragraf, bez objašnjenja, bez markdown-a, bez navodnika."
+    "9. Ako poruka sadrži KONTEKST SLUČAJA (pol/dob), to su činjenice: 'muški/ženski' "
+    "izbore u template-u razriješi prema polu, rodne oblike i padeže uskladi, a dob "
+    "upiši gdje paragraf ima mjesto za nju ako nije diktirana.\n"
+    "10. Vrati SAMO popunjen paragraf, bez objašnjenja, bez markdown-a, bez navodnika."
 )
 
 EXTRACT_NAREDBA_SYSTEM = (
@@ -233,6 +240,7 @@ Vrati ČIST JSON objekat sa ovim ključevima (svi su stringovi; ako podatak fali
 
 {
   "ime_prezime": "Prezime Ime u TITLE CASE (npr. 'Džindo Ćamil', NE 'DŽINDO (ALIJA) ĆAMIL'). Bez očevog imena u zagradi.",
+  "spol": "muški ili ženski — ako se iz naredbe može utvrditi (formulacije poput 'leš ženske osobe', ili nedvosmisleno iz imena pokojnika). Ako nesigurno, prazan string.",
   "drzavljanin": "BiH (po default-u, ako nije eksplicitno drugačije navedeno)",
   "prebivaliste": "Grad/općina prebivališta (vidi adresu pronalaska ili prebivališta — NIJE rodno mjesto)",
   "adresa": "Ulica i broj iz mjesta prebivališta ili pronalaska",
@@ -249,6 +257,38 @@ Vrati JSON OD-MAH, bez ikakvog uvodnog teksta."""
 
 def _safe_draft_id(s: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_\-]", "", s or "")[:64]
+
+
+def _case_context_block(ctx) -> str:
+    """Blok 'KONTEKST SLUČAJA' za merge/cleanup — Claude inače ne zna pol ni dob
+    (sekcije se spajaju izolovano, a ti podaci žive u zaglavlju). Ide u user poruku
+    (mijenja se po slučaju — ne smije u keširani system prompt)."""
+    if not isinstance(ctx, dict) or not ctx:
+        return ""
+    parts = []
+    spol = (ctx.get("spol") or "").strip()
+    if spol:
+        parts.append(f"Pol: {spol}")
+    dob = ctx.get("dob_godina")
+    if isinstance(dob, (int, float)):
+        extra = []
+        if ctx.get("rodjen"):
+            extra.append(f"rođen/a {ctx['rodjen']}")
+        if ctx.get("pronadjen"):
+            extra.append(f"pronađen/a {ctx['pronadjen']}")
+        parts.append(f"Dob: {int(dob)} godina" + (f" ({', '.join(extra)})" if extra else ""))
+    if not parts:
+        return ""
+    return (
+        "KONTEKST SLUČAJA (činjenice iz zaglavlja zapisnika — OBAVEZNO ih primijeni):\n- "
+        + "\n- ".join(parts) + "\n"
+        "Pravila konteksta:\n"
+        "- SVE rodno osjetljive oblike uskladi sa polom: 'muški/ženski leš' → odaberi tačan, "
+        "pronađen/pronađena, kosmatost polnog predjela muškog/ženskog tipa, padeži i participi.\n"
+        "- Ako paragraf ima mjesto za dob ('u dobi od __ godina') a diktacija je ne navodi, "
+        "upiši dob iz konteksta.\n"
+        "- Kontekst NE proširuj: ništa drugo iz njega ne izvodi niti dodaje.\n\n"
+    )
 
 
 # === Endpoint implementacije (čiste funkcije) ===
@@ -308,7 +348,8 @@ def ep_cleanup(payload):
     text = (payload.get("text") or "").strip()
     if not text:
         return {"text": ""}
-    user_msg = f"Sekcija: {payload.get('section_title', '')}\n\nSirovi tekst:\n{text}"
+    ctx_block = _case_context_block(payload.get("case_context"))
+    user_msg = f"{ctx_block}Sekcija: {payload.get('section_title', '')}\n\nSirovi tekst:\n{text}"
     result = api_clients.claude_messages(
         ANTHROPIC_API_KEY, CLAUDE_MODEL, CLEANUP_SYSTEM,
         [{"role": "user", "content": user_msg}], max_tokens=2000,
@@ -343,12 +384,13 @@ def ep_merge(payload):
         parts.append("\n--- KRAJ PRIMJERA ---")
         examples_block = "".join(parts)
 
+    ctx_block = _case_context_block(payload.get("case_context"))
     if is_multi:
-        user_query = f"Sekcija: {section_title}\n\nDiktacija:\n{raw}"
+        user_query = f"{ctx_block}Sekcija: {section_title}\n\nDiktacija:\n{raw}"
     else:
         hint_part = f"\n\nDodatni kontekst: {hint}" if hint else ""
         user_query = (
-            f'Sekcija: {section_title}{hint_part}\n\n'
+            f'{ctx_block}Sekcija: {section_title}{hint_part}\n\n'
             f'Template paragraf (ima praznine — prepoznaješ ih po višestrukim razmacima):\n'
             f'"""{template_text}"""\n\n'
             f'Diktirane fraze (kratke, neformalne):\n"""{raw}"""\n\n'

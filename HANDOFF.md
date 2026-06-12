@@ -54,6 +54,16 @@ zapisnika prof. dr. Adisa Salihbegovića. Port desktop alata `diktafon-obdukcija
 - **Bug fix (#32):** kucanje ne skače na vrh; uklonjen forsirani focus-skrol.
 - **Vlastiti modali (#34):** `uiConfirm`/`uiPrompt` u stilu app-a umjesto nativnih `confirm`/`prompt` (nema više „The page at https://appassets…"); crveno „Obriši" za destruktivno.
 - **Audit fixevi (#35):** (1) `bindSectionEvents(scope)` — rerenderMultiBody više NE duplira listenere na netaknute kartice (dupli Claude pozivi!); (2) zombi-mikrofon: guarded clear `STATE.recording` u svim `onstop` (poredi sa `rec`), okolnosti-mic zaustavlja sekcijsko snimanje; (3) toast z-index 500 + `body.has-fullscreen .toast{bottom:150px}` (bio prekriven fokus-trakom); (4) `setWebContentsDebuggingEnabled(false)` — privatnost (debug-potpisan APK, BuildConfig.DEBUG ne pomaže); (5) `draftHasContent()` — „novi draft?" pita samo uz stvaran sadržaj; (6) uklonjen 10s polling (baterija); (7) timer snimanja: crveni badge `#rec-timer` iznad fokus-trake + vrijeme u inline mic labelima; (8) vibracija (`buzz()`, VIBRATE permission): 80ms start, 40ms stop, [40,80,40] transkript stigao.
+- **Kontekst slučaja (#42) — pol i dob u merge:** sekcije se spajaju IZOLOVANO pa Claude nije znao pol
+  (template default „muški" pobjeđivao i za žene) ni dob (iako zaglavlje ima datum rođenja). Sada: novo polje
+  **„Pol"** u zaglavlju (quick dugmad muški/ženski; extract_naredba ga čita iz naredbe), **dob se računa** u JS
+  (`computeAge`: rodjen → pronadjen ili danas), i oboje ide kao `case_context` uz SVAKI merge/cleanup poziv →
+  `_case_context_block()` u android_api gradi „KONTEKST SLUČAJA" blok u user poruci (NE u keširani system!)
+  s pravilima: uskladi rod svuda, upiši dob u „u dobi od __ godina" ako nije diktirana, ništa ne izmišljaj.
+  System promptovi (CLEANUP/MULTI/SINGLE) dobili po jedno pravilo da kontekst tretiraju kao činjenice.
+- **Tužilaštva (#41):** pun tužilački broj sa oznakom (T01–T10 kantoni FBiH po broju kantona, T20 = BiH);
+  `_tuzilastvo_genitiv()` izvodi naziv u tabeli zapisnika iz oznake (nije više hardkodovano Sarajevo);
+  nepoznata T-oznaka → „Nadležnog tužilaštva"; goli/KTA broj (stari drafti) → default KS. RS okružna NISU mapirana.
 - **Audit 2 (#40) — tačnost:** (1) upozorenje „Nespojen diktat" pri generisanju (raw bez final → sirovi govor
   bi ušao u zapisnik; RAZLIČITO od odbijenog QA dijaloga za prazne sekcije); (2) KT prefiks: `_full_kt()` u
   generatoru — polje sad prima „KTA/KT/KTN broj" (UI prefiks „T09 0 "), extract prompt čuva oznaku vrste predmeta
@@ -78,6 +88,9 @@ zapisnika prof. dr. Adisa Salihbegovića. Port desktop alata `diktafon-obdukcija
 
 ## 5. Gotchas (da se ne ponavljaju greške)
 - **JS balans-check:** `parens diff +1` je **LAŽNI alarm** (string literal `"("` u `shortTitle`). Braces/brackets moraju biti OK; backtici parni. Provjeri deltu izmjena, ne apsolut.
+- **JS sintaksa — NAJBOLJA provjera:** esprima (pip, u temp) nad kopijom uz dvije neutralizacije:
+  `catch {` → `catch (e) {` (ES2019) i `?.` → `.` (ES2020). Ručni balans-brojač zna pogrešno
+  brojati (regex-state guta blokove) — paran rezultat ≠ dokaz, esprima parse = dokaz.
 - **Windows konzola cp1252:** svaki Python koji printa č/ž/š → `sys.stdout.reconfigure(encoding="utf-8")`.
 - **LF→CRLF** git upozorenja su bezopasna.
 - **Whisper prompt** ~224 tokena (čuva ZADNJIH) → sekcijski termini idu na kraj.

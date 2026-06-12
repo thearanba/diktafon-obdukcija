@@ -863,7 +863,7 @@ async function cleanupOkolnosti(btn) {
     const res = await api("/api/cleanup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, section_title: label }),
+      body: JSON.stringify({ text, section_title: label, case_context: caseContext() }),
     });
     STATE.header.okolnosti = (res.text || "").trim();
     const ta = document.querySelector('textarea[data-header-id="okolnosti"]');
@@ -1424,6 +1424,41 @@ function updateSectionStatus(sectionId) {
   dot.classList.toggle("cleaned", hasFinal);
 }
 
+// === Kontekst slučaja (pol, dob) za Claude merge/cleanup ===
+// Sekcije se spajaju IZOLOVANO — bez ovoga Claude ne zna pol (pa template default
+// "muški" pobjeđuje i kad je osoba žensko) ni dob (iako zaglavlje ima datum rođenja).
+function parseDateDMY(s) {
+  const m = /(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(s || "");
+  if (!m) return null;
+  const d = new Date(+m[3], +m[2] - 1, +m[1]);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Puna godina starosti na referentni datum (pronađen/preminuo; bez njega — danas)
+function computeAge(rodjenStr, refStr) {
+  const born = parseDateDMY(rodjenStr);
+  if (!born) return null;
+  const ref = parseDateDMY(refStr) || new Date();
+  let age = ref.getFullYear() - born.getFullYear();
+  if (ref.getMonth() < born.getMonth() ||
+      (ref.getMonth() === born.getMonth() && ref.getDate() < born.getDate())) age--;
+  return (age >= 0 && age <= 120) ? age : null;
+}
+
+function caseContext() {
+  const ctx = {};
+  const s = (STATE.header.spol || "").trim().toLowerCase();
+  if (s.startsWith("m")) ctx.spol = "muški";
+  else if (s.startsWith("ž") || s.startsWith("z") || s.startsWith("f")) ctx.spol = "ženski";
+  const dob = computeAge(STATE.header.rodjen, STATE.header.pronadjen);
+  if (dob != null) {
+    ctx.dob_godina = dob;
+    if ((STATE.header.rodjen || "").trim()) ctx.rodjen = STATE.header.rodjen.trim();
+    if ((STATE.header.pronadjen || "").trim()) ctx.pronadjen = STATE.header.pronadjen.trim();
+  }
+  return ctx;
+}
+
 // === Merge (Opcija B) ===
 async function mergeSection(sectionId) {
   if (!STATE.config.claude_available) {
@@ -1458,6 +1493,7 @@ async function mergeSection(sectionId) {
         is_multi: !!sectionDef.multi,
         is_numbered: !!sectionDef.numbered,
         hint: sectionDef.hint || "",
+        case_context: caseContext(),
       }),
     });
     sec.final = res.text;
@@ -1821,6 +1857,7 @@ async function mergeItem(sectionId, itemIdx) {
         is_multi: true,  // Claude tretira kao listu
         is_numbered: false,  // Numeracija nije po stavki — radi je generator za .docx
         hint: def.hint || "",
+        case_context: caseContext(),
       }),
     });
     item.final = res.text.trim();
@@ -2112,6 +2149,7 @@ async function cleanupSection(sectionId) {
         text: ta.value,
         section_id: sectionId,
         section_title: sec ? sec.title : "",
+        case_context: caseContext(),
       }),
     });
     ta.value = res.text;

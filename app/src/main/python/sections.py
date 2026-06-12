@@ -14,6 +14,8 @@ DEFAULT_IZUZETI_UZORCI = (
 # Polja zaglavlja (popunjavaju se u tabeli template-a)
 HEADER_FIELDS = [
     {"id": "ime_prezime", "label": "Prezime i ime (kako će biti u nazivu fajla i draft-a)", "uppercase": True, "placeholder": "Prezime Ime, npr. Kasapović Bekir"},
+    {"id": "spol", "label": "Pol (Claude usklađuje rod u svim sekcijama)", "placeholder": "muški / ženski",
+     "quick_options": ["muški", "ženski"]},
     {"id": "drzavljanin", "label": "Državljanin", "placeholder": "BiH"},
     {"id": "prebivaliste", "label": "Prebivalište", "placeholder": "Sarajevo"},
     {"id": "adresa", "label": "Adresa", "placeholder": "Ulica i broj"},
