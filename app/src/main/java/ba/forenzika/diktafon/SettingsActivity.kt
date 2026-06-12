@@ -15,6 +15,8 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        // Privatnost: API ključevi ne trebaju u recents-pregled
+        if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
 
         // API ključevi + brava žive u šifrovanom skladištu (SecurePrefs)
         val prefs = SecurePrefs.get(this)

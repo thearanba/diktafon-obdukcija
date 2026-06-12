@@ -158,11 +158,13 @@ function autoDraftName(header) {
   // (isti format kao folder u OneDrive/Sudska medicina/Vještačenja/...)
   const ime = (header.ime_prezime || "").trim();
   const kt = (header.kt_broj || "").trim();
-  // KT broj polje u UI nema prefix u value (prefix je samo vizuelan u input field-u),
-  // pa ga ovdje dodajemo
-  const ktFull = kt
-    ? (kt.toUpperCase().startsWith("T") ? kt : `T09 0 KTA ${kt}`)
-    : "";
+  // Vrijednost polja može biti: pun broj ("T09 0 KT ..."), broj sa oznakom
+  // ("KTA 0207907 26" / "KT ..."), ili goli broj (stari drafti → istorijski KTA)
+  const ktU = kt.toUpperCase();
+  const ktFull = !kt ? ""
+    : ktU.startsWith("T") ? kt
+    : ktU.startsWith("KT") ? `T09 0 ${kt}`
+    : `T09 0 KTA ${kt}`;
   if (ime && ktFull) return `${ime} - ${ktFull}`;
   if (ime) return ime;
   if (ktFull) return ktFull;
@@ -2149,8 +2151,24 @@ async function generateReport() {
       return;
     }
   }
-  // (QA provjera praznih sekcija NAMJERNO ne postoji: kod spoljašnjeg pregleda
+  // (QA provjera PRAZNIH sekcija NAMJERNO ne postoji: kod spoljašnjeg pregleda
   //  većina sekcija legitimno ostaje na standardnom template tekstu.)
+  // ALI: diktirano-a-NESPOJENO nikad nije namjerno — u zapisnik bi ušao sirovi govor.
+  const nespojene = [];
+  for (const s of STATE.config.sections) {
+    const sec = getSection(s.id);
+    const rawOnly = (s.multi && sec.items)
+      ? sec.items.some(it => (it.raw || "").trim() && !(it.final || "").trim())
+      : !!((sec.raw || "").trim() && !(sec.final || "").trim());
+    if (rawOnly) nespojene.push(shortTitle(s.title) || s.title);
+  }
+  if (nespojene.length) {
+    const ok = await uiConfirm(
+      `Imaju diktat koji NIJE spojen — u zapisnik bi ušao sirovi govor:\n\n${nespojene.join(", ")}\n\nVrati se i spoji ih (🪄), ili generiši svejedno.`,
+      { title: "Nespojen diktat", okText: "Generiši svejedno", cancelText: "Vrati se" }
+    );
+    if (!ok) return;
+  }
   const btn = $("#btn-generate");
   btn.disabled = true;
   const old = btn.textContent;
@@ -2192,10 +2210,28 @@ async function generateReport() {
 // === Drafts (multi) ===
 let autoSaveTimer = null;
 
+// Odmah izvrši odgođeni autoSave (ako postoji). Poziva se PRIJE promjene/brisanja
+// drafta — inače debounce od 500ms proguta zadnje kucanje starog drafta, a pri
+// brisanju tekućeg zna stvoriti "ghost" novi draft kad tajmer okine prekasno.
+function flushAutoSave() {
+  if (!autoSaveTimer) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
+  const id = getCurrentDraftId();
+  if (!id) return;
+  try {
+    persistDraft(id, autoDraftName(STATE.header), STATE.header, STATE.sections);
+    flashSavedIndicator();
+  } catch (e) {
+    console.error("flushAutoSave:", e);
+  }
+}
+
 function autoSave() {
   // Debounce — sačuvaj nakon 500ms mirovanja
   clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
     let id = getCurrentDraftId();
     if (!id) {
       id = createNewDraft(autoDraftName(STATE.header));
@@ -2239,6 +2275,7 @@ async function loadCurrentDraftIntoState() {
 }
 
 async function switchToDraft(id) {
+  flushAutoSave();  // sačuvaj zadnje kucanje STAROG drafta prije prelaska
   const data = await loadDraftById(id);
   if (!data) {
     toast("Draft ne postoji", "error");
@@ -2246,6 +2283,7 @@ async function switchToDraft(id) {
   }
   setCurrentDraftId(id);
   STATE.currentDraftId = id;
+  STATE.whisperOriginals = {};  // korekcije se ne smiju učiti preko granice draftova
   STATE.header = data.header || {};
   STATE.sections = data.sections || {};
   STATE.lastKnownServerTs = data.updatedAt || 0;
@@ -2286,10 +2324,12 @@ async function newDraft() {
       { title: "Otvoriti novi prazan draft?", okText: "Otvori novi" }))) {
     return;
   }
+  flushAutoSave();  // sačuvaj zadnje kucanje starog drafta
   const id = createNewDraft(autoDraftName({}));
   STATE.currentDraftId = id;
   STATE.header = {};
   STATE.sections = {};
+  STATE.whisperOriginals = {};
   izuzetiResetDefaults();      // resetuj izuzete uzorke na default
   closeIzuzetiOverlay();       // zatvori prozor ako je otvoren
   renderHeaderForm();
@@ -2390,6 +2430,7 @@ function openDraftsModal() {
       if (!d) return;
       if (!(await uiConfirm(`Draft "${d.name}" biće trajno obrisan. Ova akcija se ne može poništiti.`,
           { title: "Obrisati draft?", okText: "Obriši", danger: true }))) return;
+      flushAutoSave();  // isprazni odgođeni tajmer — inače zna stvoriti ghost draft poslije brisanja
       const wasCurrent = id === getCurrentDraftId();
       deleteDraft(id);
       if (wasCurrent) {
@@ -2413,6 +2454,20 @@ function openDraftsModal() {
 
 function closeDraftsModal(overlay) {
   if (overlay && overlay.parentElement) overlay.parentElement.removeChild(overlay);
+}
+
+// === Izvoz svih draftova (ZIP u Download) — sigurnosna kopija ===
+// Jedini uređaj + isključen cloud backup → ovo je jedina rezerva diktiranog rada.
+async function exportDrafts() {
+  flushAutoSave();  // i tekuće izmjene neka uđu u izvoz
+  try {
+    const res = await nativeCall("export_drafts", {});
+    if (res && res.__error) throw new Error(res.detail || ("status " + res.status));
+    window.AndroidBridge.saveFile(res.filename, res.zip_b64, "application/zip");
+    toast(`Izvezeno ${res.count} draftova u Download ✓`, "success");
+  } catch (err) {
+    toast("Izvoz: " + err.message, "error");
+  }
 }
 
 // === Draft indikator u topbar-u ===
@@ -2570,6 +2625,11 @@ async function init() {
       menu.classList.toggle("show");
     });
     document.addEventListener("click", () => menu.classList.remove("show"));
+    const mExport = $("#menu-export");
+    if (mExport) mExport.addEventListener("click", () => {
+      menu.classList.remove("show");
+      exportDrafts();
+    });
     const mSettings = $("#menu-settings");
     const mReload = $("#menu-reload");
     if (mSettings) mSettings.addEventListener("click", () => {

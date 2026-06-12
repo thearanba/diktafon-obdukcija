@@ -74,6 +74,10 @@ class MainActivity : AppCompatActivity() {
         // uklanja dupli „Diktafon obdukcija").
         supportActionBar?.hide()
 
+        // Privatnost: u listi nedavnih aplikacija NE prikazuj snimak sadržaja
+        // (imena pokojnika). Ručni screenshotovi korisnika i dalje rade (nije FLAG_SECURE).
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
+
         assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/", WebAssetHandler(this))
             .build()
@@ -205,6 +209,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun bootstrapPython(anthropic: String, groq: String) {
         try {
+            // Privatnost: fotografije naredbi iz ranijih sesija ne trebaju ležati u kešu
+            try { File(cacheDir, "camera").deleteRecursively() } catch (_: Exception) {}
+
             val appDir = File(filesDir, "app")
             val dataDir = File(filesDir, "data")
             dataDir.mkdirs()
@@ -277,6 +284,36 @@ class MainActivity : AppCompatActivity() {
         fun openSettings() {
             runOnUiThread {
                 startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            }
+        }
+
+        /** Snimi proizvoljan fajl (base64) u javni Download folder — npr. ZIP izvoz draftova. */
+        @JavascriptInterface
+        fun saveFile(filename: String, base64Data: String, mime: String) {
+            try {
+                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val resolver = contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("MediaStore insert vratio null")
+                resolver.openOutputStream(uri).use { it!!.write(bytes) }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity,
+                        "Snimljeno u Download: $filename", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "saveFile greška: ${e.message}", e)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity,
+                        "Greška snimanja: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
 

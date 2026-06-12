@@ -35,6 +35,25 @@ def _ensure_run_format_from_pPr(para):
 USER_CONTENT_HIGHLIGHT = "yellow"  # Word highlight color (named values only)
 
 
+def _full_kt(kt: str) -> str:
+    """Puni tužilački broj za zapisnik/ime fajla.
+
+    Prihvata tri oblika (predmeti nisu uvijek KTA — ubistva idu pod KT!):
+      "T09 0 KT 0123456 25"  → ostaje kako jeste (pun broj)
+      "KT 0123456 25" / "KTA 0207907 26" / "KTN ..." → dopiše se samo "T09 0 "
+      "0207907 26" (goli broj, stari drafti)         → istorijski default "T09 0 KTA "
+    """
+    kt = (kt or "").strip()
+    if not kt:
+        return ""
+    u = kt.upper()
+    if u.startswith("T"):
+        return kt
+    if u.startswith("KT"):
+        return f"T09 0 {kt}"
+    return f"T09 0 KTA {kt}"
+
+
 def _mark_run_as_user_content(run_element, force_normal_weight=True):
     """Označi run kao korisnikov unos sa Word highlight bojom (žutom).
     Koristi <w:highlight> (Word standard highlight) umjesto <w:shd> — lakše ga je
@@ -240,11 +259,7 @@ def _fill_header_table(doc, header_data: dict):
     # Cell (4,1): "Kantonalnog Tužilaštva..." (statič) + "tužilac: NAME" + "veza: BROJ" + "Naredbom..." (statič)
     cell_41 = table.rows[4].cells[1]
     tuzilac = header_data.get("tuzilac", "")
-    kt_broj = header_data.get("kt_broj", "")
-    if kt_broj and not kt_broj.startswith("T09"):
-        kt_broj_full = f"T09 0 KTA {kt_broj}".strip()
-    else:
-        kt_broj_full = kt_broj
+    kt_broj_full = _full_kt(header_data.get("kt_broj", ""))
     _set_cell_lines_smart(cell_41, [
         {"static": "Kantonalnog Tužilaštva Kantona Sarajevo"},
         {"label": "tužilac:", "value": tuzilac},
@@ -501,6 +516,34 @@ def generate_report(template_path: str, output_dir: str,
     # Učitaj template (python-docx učitava u memoriju, ne otvara fajl drveno)
     doc = Document(str(template_path))
 
+    # KORAK 0: VERIFIKACIJA MAPIRANJA — sekcije su vezane za fiksne indekse paragrafa.
+    # Ako je template ikad izmijenjen (paragraf viška/manjka), sadržaj bi TIHO otišao
+    # u pogrešne sekcije pravnog dokumenta. Svako sidro ("expect") mora da se poklopi,
+    # inače se generisanje obustavlja sa jasnom porukom.
+    mismatches = []
+    for section in DICTATION_SECTIONS:
+        idx = section["para_idx"]
+        exp = section.get("expect")
+        if idx >= len(doc.paragraphs):
+            mismatches.append(f"{section['id']}: paragraf {idx} ne postoji u template-u")
+            continue
+        if exp is None:
+            continue
+        actual = doc.paragraphs[idx].text.strip()
+        if exp == "":
+            if actual:
+                mismatches.append(
+                    f"{section['id']}: očekivan PRAZAN paragraf {idx}, nađeno: {actual[:40]!r}")
+        elif not actual.startswith(exp):
+            mismatches.append(
+                f"{section['id']}: paragraf {idx} ne počinje sa {exp!r}, nađeno: {actual[:40]!r}")
+    if mismatches:
+        raise ValueError(
+            "Template se ne poklapa sa shemom sekcija — generisanje OBUSTAVLJENO da "
+            "sadržaj ne završi u pogrešnim dijelovima zapisnika. Neslaganja: "
+            + "; ".join(mismatches[:4])
+            + (f" (+ još {len(mismatches) - 4})" if len(mismatches) > 4 else ""))
+
     # KORAK 1: Sačuvaj reference na sve paragrafe koje ćemo modifikovati
     # PRIJE bilo kakvih izmjena. Insertovanje paragrafa pomjera indekse,
     # pa moramo raditi sa stabilnim XML referencama.
@@ -525,11 +568,7 @@ def generate_report(template_path: str, output_dir: str,
 
     # Naming konvencija foldera predmeta: "Ime Prezime - T09 0 KTA broj.docx"
     ime = (header_data.get("ime_prezime") or "Bez imena").strip()
-    kt = (header_data.get("kt_broj") or "").strip()
-    if kt and not kt.upper().startswith("T"):
-        kt_full = f"T09 0 KTA {kt}"
-    else:
-        kt_full = kt
+    kt_full = _full_kt(header_data.get("kt_broj") or "")
     # Sanitiziraj ime za fajl (zadrži dijakritike i razmake, samo izbaci nevalidne windows znake)
     invalid = r'<>:"/\|?*'
     safe_ime = "".join(c for c in ime if c not in invalid).strip()

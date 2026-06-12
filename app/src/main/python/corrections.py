@@ -156,8 +156,18 @@ def _save_json(path: Path, data: dict):
 
 
 def load_learned_corrections() -> dict:
-    """Vraća dict {pattern: replacement} naučenih korekcija."""
-    return _load_json(LEARNED_PATH)
+    """Vraća dict {pattern: replacement} naučenih korekcija.
+
+    Naučeni parovi su CIJELE riječi (iz diff_words) — obrazac bez ZAVRŠNE granice
+    bi kvario duže riječi (npr. naučeno "krv"→"krvi" bi "krvni" pretvorilo u
+    "krvini"). Builtin pravila namjerno nemaju završni \\b (sufiks-matching) —
+    normalizacija važi samo za naučena.
+    """
+    learned = _load_json(LEARNED_PATH)
+    return {
+        (p if p.endswith(r"\b") else p + r"\b"): r
+        for p, r in learned.items()
+    }
 
 
 def save_learned_correction(pattern: str, replacement: str):
@@ -282,7 +292,8 @@ def log_correction(original: str, edited: str) -> list[dict]:
         # Ako je dosegao prag, automatski uči
         if entry["count"] >= LEARN_THRESHOLD:
             learned = load_learned_corrections()
-            pattern = r"\b" + re.escape(before)
+            # Obje granice: bez završnog \b bi pravilo kvarilo duže riječi
+            pattern = r"\b" + re.escape(before) + r"\b"
             if pattern not in learned:
                 save_learned_correction(pattern, after)
                 newly_learned.append({

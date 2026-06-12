@@ -239,7 +239,7 @@ Vrati ČIST JSON objekat sa ovim ključevima (svi su stringovi; ako podatak fali
   "rodjen": "DD.MM.YYYY. godine (formatiraj sa tačkama i sa 'godine' na kraju)",
   "pronadjen": "DD.MM.YYYY. godine (datum kad je tijelo pronađeno ili datum smrti)",
   "tuzilac": "Ime i prezime kantonalnog/okružnog tužioca koji je potpisao naredbu (npr. 'Zoran Ikonić')",
-  "kt_broj": "Tužilački broj BEZ prefiksa 'T09 0 KTA' (npr. 'T09 0 KTA 0207907 26' → '0207907 26')",
+  "kt_broj": "Tužilački broj BEZ 'T09 0' ali SA oznakom vrste predmeta TAČNO kako piše u naredbi — KTA/KT/KTN se razlikuju! (npr. 'T09 0 KTA 0207907 26' → 'KTA 0207907 26'; 'T09 0 KT 0123456 25' → 'KT 0123456 25')",
   "okolnosti": "Kratak opis okolnosti slučaja iz naredbe — gdje, kako, kada je tijelo pronađeno (jedna do dvije rečenice, na bosanskom)"
 }
 
@@ -474,6 +474,28 @@ def ep_generate(payload):
     }
 
 
+def ep_export_drafts(_payload):
+    """Spakuje sve drafte u ZIP (base64) — sigurnosna kopija u Download
+    (jedini uređaj + allowBackup=false → ovo je jedina rezerva draftova)."""
+    import io
+    import zipfile
+    from datetime import datetime
+    buf = io.BytesIO()
+    count = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for fp in sorted(DRAFTS_DIR.glob("*.json")):
+            z.write(fp, fp.name)
+            count += 1
+    if count == 0:
+        raise ApiError(404, "Nema draftova za izvoz.")
+    stamp = datetime.now().strftime("%Y-%m-%d %H-%M")
+    return {
+        "filename": f"Diktafon drafti {stamp}.zip",
+        "zip_b64": base64.b64encode(buf.getvalue()).decode("ascii"),
+        "count": count,
+    }
+
+
 def ep_drafts_list(_payload):
     drafts = []
     for fp in DRAFTS_DIR.glob("*.json"):
@@ -531,6 +553,7 @@ _ROUTES = {
     "extract_naredba": ep_extract_naredba,
     "generate": ep_generate,
     "drafts_list": ep_drafts_list,
+    "export_drafts": ep_export_drafts,
     "draft_get": ep_draft_get,
     "draft_put": ep_draft_put,
     "draft_delete": ep_draft_delete,

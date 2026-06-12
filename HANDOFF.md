@@ -1,7 +1,7 @@
 # Diktafon obdukcija — HANDOFF (nastavak u novoj sesiji)
 
 > Samostalan pregled stanja projekta da se rad nastavi bez gubitka konteksta.
-> Zadnji build: **#38** (brava aplikacije: lozinka + otisak prsta). Datum: 2026-06-10.
+> Zadnji build: **#40** (audit 2: tačnost dokumenta + privatnost/podaci). Datum: 2026-06-12.
 
 ## 1. Šta je ovo
 Native Android aplikacija (Samsung Galaxy S25 Ultra) za diktiranje obdukcionog
@@ -54,6 +54,18 @@ zapisnika prof. dr. Adisa Salihbegovića. Port desktop alata `diktafon-obdukcija
 - **Bug fix (#32):** kucanje ne skače na vrh; uklonjen forsirani focus-skrol.
 - **Vlastiti modali (#34):** `uiConfirm`/`uiPrompt` u stilu app-a umjesto nativnih `confirm`/`prompt` (nema više „The page at https://appassets…"); crveno „Obriši" za destruktivno.
 - **Audit fixevi (#35):** (1) `bindSectionEvents(scope)` — rerenderMultiBody više NE duplira listenere na netaknute kartice (dupli Claude pozivi!); (2) zombi-mikrofon: guarded clear `STATE.recording` u svim `onstop` (poredi sa `rec`), okolnosti-mic zaustavlja sekcijsko snimanje; (3) toast z-index 500 + `body.has-fullscreen .toast{bottom:150px}` (bio prekriven fokus-trakom); (4) `setWebContentsDebuggingEnabled(false)` — privatnost (debug-potpisan APK, BuildConfig.DEBUG ne pomaže); (5) `draftHasContent()` — „novi draft?" pita samo uz stvaran sadržaj; (6) uklonjen 10s polling (baterija); (7) timer snimanja: crveni badge `#rec-timer` iznad fokus-trake + vrijeme u inline mic labelima; (8) vibracija (`buzz()`, VIBRATE permission): 80ms start, 40ms stop, [40,80,40] transkript stigao.
+- **Audit 2 (#40) — tačnost:** (1) upozorenje „Nespojen diktat" pri generisanju (raw bez final → sirovi govor
+  bi ušao u zapisnik; RAZLIČITO od odbijenog QA dijaloga za prazne sekcije); (2) KT prefiks: `_full_kt()` u
+  generatoru — polje sad prima „KTA/KT/KTN broj" (UI prefiks „T09 0 "), extract prompt čuva oznaku vrste predmeta
+  (ubistva = KT, ne KTA!), goli broj = istorijski KTA (stari drafti rade); (3) template verifikacija: `expect`
+  sidra u DICTATION_SECTIONS + KORAK 0 u generate_report — izmijenjen template OBUSTAVLJA generisanje (sadržaj
+  ne smije tiho u pogrešne sekcije); (4) naučene korekcije: obavezna ZAVRŠNA granica `\b` (staro „krv→krvi" je
+  kvarilo „krvni"→„krvini"; normalizacija u load_learned_corrections pokriva i postojeće fajlove).
+- **Audit 2 (#40) — privatnost/podaci:** allowBackup=false (drafti ne idu u Google backup);
+  `setRecentsScreenshotEnabled(false)` (Main+Settings; ručni screenshotovi RADE); čišćenje `cache/camera` pri
+  startu (foto naredbi); **„💾 Izvezi drafte (ZIP)"** u ⋮ meniju (endpoint `export_drafts` + `AndroidBridge.saveFile`
+  → Download; jedina rezerva uz isključen backup — import NE postoji još); `flushAutoSave()` prije switch/new/delete
+  drafta (debounce je gutao zadnjih 500ms / pravio ghost draft); `whisperOriginals` se čisti pri promjeni drafta.
 - **Brava aplikacije (#38):** lokalni app-lock (nema servera → nema naloga). `LoginActivity` (nije launcher;
   `MainActivity.onCreate` guard preusmjeri ako `AppLock.unlocked==false`). Prvi ulazak = postavljanje lozinke
   (min 6, PBKDF2-HmacSHA256 120k iteracija + so, konstantno poređenje); poslije = lozinka ILI otisak
