@@ -60,6 +60,14 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Brava aplikacije: hladni start (ili direktan vanjski poziv) bez otključavanja
+        // ide na LoginActivity. Flag živi u procesu → povratak iz pozadine ne traži ponovo.
+        if (!AppLock.unlocked) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         webView = WebView(this)
         setContentView(webView)
         // Sakrij nativnu ActionBar — naslov + meni su sada u HTML traci (štedi prostor,
@@ -80,7 +88,8 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        // API ključevi iz šifrovanog skladišta (SecurePrefs migrira stare pri prvom pristupu)
+        val prefs = SecurePrefs.get(this)
         val anthropic = prefs.getString(KEY_ANTHROPIC, "") ?: ""
         val groq = prefs.getString(KEY_GROQ, "") ?: ""
         if (anthropic.isBlank() && groq.isBlank()) {

@@ -1,7 +1,7 @@
 # Diktafon obdukcija — HANDOFF (nastavak u novoj sesiji)
 
 > Samostalan pregled stanja projekta da se rad nastavi bez gubitka konteksta.
-> Zadnji build: **#36** (robusnost: Sonnet 4.6 + retry + Whisper fantom-filter). Datum: 2026-06-10.
+> Zadnji build: **#38** (brava aplikacije: lozinka + otisak prsta). Datum: 2026-06-10.
 
 ## 1. Šta je ovo
 Native Android aplikacija (Samsung Galaxy S25 Ultra) za diktiranje obdukcionog
@@ -54,6 +54,14 @@ zapisnika prof. dr. Adisa Salihbegovića. Port desktop alata `diktafon-obdukcija
 - **Bug fix (#32):** kucanje ne skače na vrh; uklonjen forsirani focus-skrol.
 - **Vlastiti modali (#34):** `uiConfirm`/`uiPrompt` u stilu app-a umjesto nativnih `confirm`/`prompt` (nema više „The page at https://appassets…"); crveno „Obriši" za destruktivno.
 - **Audit fixevi (#35):** (1) `bindSectionEvents(scope)` — rerenderMultiBody više NE duplira listenere na netaknute kartice (dupli Claude pozivi!); (2) zombi-mikrofon: guarded clear `STATE.recording` u svim `onstop` (poredi sa `rec`), okolnosti-mic zaustavlja sekcijsko snimanje; (3) toast z-index 500 + `body.has-fullscreen .toast{bottom:150px}` (bio prekriven fokus-trakom); (4) `setWebContentsDebuggingEnabled(false)` — privatnost (debug-potpisan APK, BuildConfig.DEBUG ne pomaže); (5) `draftHasContent()` — „novi draft?" pita samo uz stvaran sadržaj; (6) uklonjen 10s polling (baterija); (7) timer snimanja: crveni badge `#rec-timer` iznad fokus-trake + vrijeme u inline mic labelima; (8) vibracija (`buzz()`, VIBRATE permission): 80ms start, 40ms stop, [40,80,40] transkript stigao.
+- **Brava aplikacije (#38):** lokalni app-lock (nema servera → nema naloga). `LoginActivity` (nije launcher;
+  `MainActivity.onCreate` guard preusmjeri ako `AppLock.unlocked==false`). Prvi ulazak = postavljanje lozinke
+  (min 6, PBKDF2-HmacSHA256 120k iteracija + so, konstantno poređenje); poslije = lozinka ILI otisak
+  (`BiometricPrompt`, BIOMETRIC_STRONG, ponudi se jednom poslije uspješne lozinke; prekidač u Postavkama).
+  Politika (odluka korisnika): otključavanje SAMO pri hladnom startu (flag u procesu — pozadina ga ne briše).
+  „Zaboravio sam lozinku" = dvostruka potvrda → briše SVE (drafte, ključeve, localStorage; Download .docx ostaje).
+  `SecurePrefs` = EncryptedSharedPreferences (Keystore AES-256) za API ključeve (auto-migracija iz starih prefs)
+  + hash brave. Deps: androidx.biometric 1.1.0, security-crypto 1.1.0-alpha06. NIJE sef: drafti na disku nešifrovani.
 - **Robusnost (#36):** (1) `CLAUDE_MODEL = "claude-sonnet-4-6"` (bio 4.5; ID bez datumskog sufiksa!); (2) retry: `api_clients._urlopen_retry` — JEDAN ponovni pokušaj (1.5s backoff) za 429/5xx/529/timeout/mrežu, Claude i Groq; (3) Whisper fantom-filter: `android_api.is_whisper_phantom` (cijeli transkript == poznata YT fraza tipa „Hvala što ste gledali" → `{"text":"", "phantom":true}`, fraza usred diktata se NE dira) + JS `MIN_AUDIO_BYTES=4096` (kraći snimak se ne šalje) + prazan transkript → toast „Nije prepoznat govor", NE upisuje se i NE uči korekcije. **QA dijalog praznih sekcija ODBIJEN** (korisnik: spoljašnji pregled namjerno ostavlja većinu sekcija na template tekstu) — ne predlagati ponovo.
 
 ## 5. Gotchas (da se ne ponavljaju greške)

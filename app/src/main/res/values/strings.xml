@@ -4,4 +4,32 @@
     <string name="settings_title">Postavke (API ključevi)</string>
     <string name="menu_reload">Osvježi</string>
     <string name="first_run_keys">Unesi API ključeve da bi diktiranje i sređivanje radili.</string>
+
+    <!-- Brava aplikacije (login) -->
+    <string name="login_setup_subtitle">Prvi ulazak — postavi lozinku za zaključavanje aplikacije.</string>
+    <string name="login_enter_subtitle">Aplikacija je zaključana.</string>
+    <string name="login_hint_password">Lozinka</string>
+    <string name="login_hint_confirm">Potvrdi lozinku</string>
+    <string name="login_btn_set">Postavi lozinku</string>
+    <string name="login_btn_unlock">Otključaj</string>
+    <string name="login_btn_biometric">Otključaj otiskom prsta</string>
+    <string name="login_btn_forgot">Zaboravio sam lozinku</string>
+    <string name="login_err_short">Lozinka mora imati bar 6 znakova.</string>
+    <string name="login_err_mismatch">Lozinke se ne podudaraju.</string>
+    <string name="login_err_wrong">Pogrešna lozinka.</string>
+    <string name="login_bio_subtitle">Otključaj otiskom prsta</string>
+    <string name="login_bio_use_password">Koristi lozinku</string>
+    <string name="login_bio_offer_title">Otključavanje otiskom?</string>
+    <string name="login_bio_offer_msg">Želiš li ubuduće otključavati aplikaciju otiskom prsta? Lozinka ostaje kao rezerva.</string>
+    <string name="login_bio_offer_yes">Da, omogući</string>
+    <string name="login_bio_offer_no">Ne sada</string>
+    <string name="login_wipe_title">Zaboravljena lozinka?</string>
+    <string name="login_wipe_msg">Aplikacija nema server, pa se lozinka ne može povratiti. Jedini izlaz je BRISANJE SVIH podataka aplikacije: svi drafti, API ključevi i naučene korekcije. Generisani .docx zapisnici u Download folderu OSTAJU.</string>
+    <string name="login_wipe_title2">Posljednja potvrda</string>
+    <string name="login_wipe_msg2">Svi drafti i ključevi biće trajno obrisani. Ovo se ne može poništiti. Nastaviti?</string>
+    <string name="login_wipe_continue">Nastavi</string>
+    <string name="login_wipe_confirm">Obriši sve podatke</string>
+    <string name="login_wipe_done">Podaci obrisani — postavi novu lozinku.</string>
+    <string name="login_cancel">Otkaži</string>
+    <string name="settings_bio_toggle">Otključavanje otiskom prsta</string>
 </resources>

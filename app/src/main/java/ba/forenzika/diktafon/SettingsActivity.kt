@@ -3,9 +3,11 @@ package ba.forenzika.diktafon
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -14,13 +16,29 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_settings)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
-        val prefs = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE)
+        // API ključevi + brava žive u šifrovanom skladištu (SecurePrefs)
+        val prefs = SecurePrefs.get(this)
         val etAnthropic = findViewById<EditText>(R.id.et_anthropic)
         val etGroq = findViewById<EditText>(R.id.et_groq)
         val btnSave = findViewById<Button>(R.id.btn_save)
+        val swBiometric = findViewById<SwitchCompat>(R.id.sw_biometric)
 
         etAnthropic.setText(prefs.getString(MainActivity.KEY_ANTHROPIC, ""))
         etGroq.setText(prefs.getString(MainActivity.KEY_GROQ, ""))
+
+        // Prekidač za otisak: vidljiv samo kad je lozinka postavljena i uređaj ima biometriju
+        val bioAvailable = BiometricManager.from(this)
+            .canAuthenticate(BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+        if (AppLock.isConfigured(prefs) && bioAvailable) {
+            swBiometric.visibility = android.view.View.VISIBLE
+            swBiometric.isChecked = prefs.getBoolean(AppLock.KEY_BIO_ENABLED, false)
+            swBiometric.setOnCheckedChangeListener { _, checked ->
+                prefs.edit()
+                    .putBoolean(AppLock.KEY_BIO_ENABLED, checked)
+                    .putBoolean(AppLock.KEY_BIO_ASKED, true)
+                    .apply()
+            }
+        }
 
         btnSave.setOnClickListener {
             prefs.edit()
@@ -28,7 +46,7 @@ class SettingsActivity : AppCompatActivity() {
                 .putString(MainActivity.KEY_GROQ, etGroq.text.toString().trim())
                 .apply()
 
-            // Server čita ključeve iz environmenta pri pokretanju, pa novi ključevi
+            // Python čita ključeve iz environmenta pri pokretanju, pa novi ključevi
             // zahtijevaju svjež start procesa. Zatvori app — korisnik je ponovo otvori.
             AlertDialog.Builder(this)
                 .setTitle("Sačuvano")
