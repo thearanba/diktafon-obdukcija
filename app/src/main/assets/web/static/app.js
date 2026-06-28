@@ -402,6 +402,8 @@ function toast(msg, type = "info") {
   if (type === "error") t.classList.add("error");
   if (type === "success") t.classList.add("success");
   t.classList.remove("hidden");
+  // Restart slide-in animacije pri svakom toastu (promjena klase je ne retriggeruje)
+  t.style.animation = "none"; void t.offsetWidth; t.style.animation = "";
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add("hidden"), 3500);
 }
@@ -843,7 +845,7 @@ async function toggleOkolnostiMic(btn) {
     };
     mr.start();
     STATE.recording = rec;
-    startRecTimer();
+    startRecTimer(stream);
     setOkolnostiMicState(btn, "recording");
   } catch (err) {
     toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
@@ -1655,7 +1657,9 @@ function updateFocusMic() {
   if (!fm) return;
   const rec = !!STATE.recording;
   fm.classList.toggle("recording", rec);
+  if (!rec) fm.classList.remove("paused");
   fm.textContent = rec ? "⏹" : "🎤";
+  updateFocusClearLabel();  // lijevo dugme: Pauza/Nastavi dok snima, inače Nova/Obriši
 }
 
 // Vizuelni feedback na kokpit "Spoji" dok Claude radi (promjena boje + tekst)
@@ -1755,7 +1759,7 @@ async function startItemRecording(sectionId, itemIdx) {
     };
     mr.start();
     STATE.recording = rec;
-    startRecTimer();
+    startRecTimer(stream);
     updateItemMicState(sectionId, itemIdx, "preparing");
     setTimeout(() => {
       if (STATE.recording && STATE.recording.mediaRecorder === mr) {
@@ -1921,7 +1925,7 @@ async function startGroqRecording(sectionId, target) {
     // Pokreni snimanje ODMAH — tako MediaRecorder uhvati i 500ms warmup tišine
     mr.start();
     STATE.recording = rec;
-    startRecTimer();
+    startRecTimer(stream);
     // UI: "Pripremam..." pa nakon 500ms "Snima"
     updateMicButtonState(sectionId, "preparing");
     setTimeout(() => {
@@ -2032,24 +2036,66 @@ function stopRecording() {
   }
 }
 
-// === Timer snimanja + vibracija (rad bez gledanja u ekran) ===
+// === Timer snimanja + nivo zvuka + pauza (rad bez gledanja u ekran) ===
 let recTimerInterval = null;
+let ampCtx = null, ampAnalyser = null, ampRAF = null, ampBuf = null;
 
 function buzz(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
 }
 
-function recElapsed() {
-  if (!STATE.recordingStartTs) return "";
-  const s = Math.floor((Date.now() - STATE.recordingStartTs) / 1000);
-  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+// Živi nivo zvuka → CSS var --mic-amp (0..1); amber/crveni prsten oko mikrofona
+// pulsira s jačinom glasa. Funkcionalno: potvrda da mikrofon hvata (tišina = ravan prsten).
+function startAmpMeter(stream) {
+  stopAmpMeter();
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || !stream) return;
+    ampCtx = new AC();
+    const src = ampCtx.createMediaStreamSource(stream);
+    ampAnalyser = ampCtx.createAnalyser();
+    ampAnalyser.fftSize = 256;
+    src.connect(ampAnalyser);
+    ampBuf = new Uint8Array(ampAnalyser.fftSize);
+    ampTick();
+  } catch (e) { /* WebAudio nedostupan — prsten se prosto ne prikazuje */ }
+}
+function ampTick() {
+  if (!ampAnalyser) return;
+  ampAnalyser.getByteTimeDomainData(ampBuf);
+  let sum = 0;
+  for (let i = 0; i < ampBuf.length; i++) { const v = (ampBuf[i] - 128) / 128; sum += v * v; }
+  const rms = Math.sqrt(sum / ampBuf.length);     // 0..~1
+  const amp = Math.min(1, rms * 3.2);             // pojačanje radi vidljivosti
+  document.documentElement.style.setProperty("--mic-amp", amp.toFixed(3));
+  ampRAF = requestAnimationFrame(ampTick);
+}
+function pauseAmpMeter() {
+  if (ampRAF) { cancelAnimationFrame(ampRAF); ampRAF = null; }
+  document.documentElement.style.setProperty("--mic-amp", "0");
+}
+function stopAmpMeter() {
+  pauseAmpMeter();
+  if (ampCtx) { try { ampCtx.close(); } catch (_) {} }
+  ampCtx = null; ampAnalyser = null; ampBuf = null;
 }
 
-function startRecTimer() {
+// Proteklo vrijeme uz uračunatu pauzu (stoji dok je pauzirano).
+function recElapsed() {
+  if (!STATE.recordingStartTs) return "";
+  const ref = STATE.recPausedAt || Date.now();
+  const s = Math.floor((ref - STATE.recordingStartTs - (STATE.recPausedMs || 0)) / 1000);
+  return Math.floor(Math.max(0, s) / 60) + ":" + String(Math.max(0, s) % 60).padStart(2, "0");
+}
+
+function startRecTimer(stream) {
   STATE.recordingStartTs = Date.now();
+  STATE.recPausedMs = 0;
+  STATE.recPausedAt = null;
   clearInterval(recTimerInterval);
   recTimerInterval = setInterval(updateRecTimerLabels, 1000);
   updateRecTimerLabels();
+  startAmpMeter(stream);
   buzz(80);  // kratka potvrda: snimanje je krenulo
 }
 
@@ -2057,26 +2103,73 @@ function stopRecTimer() {
   clearInterval(recTimerInterval);
   recTimerInterval = null;
   STATE.recordingStartTs = null;
+  STATE.recPausedAt = null;
+  STATE.recPausedMs = 0;
+  stopAmpMeter();
   const badge = document.getElementById("rec-timer");
-  if (badge) badge.classList.remove("show");
+  if (badge) { badge.classList.remove("show", "paused"); }
   buzz(40);  // potvrda: snimanje stalo
+}
+
+function isRecPaused() {
+  return !!(STATE.recording && STATE.recording.mediaRecorder
+            && STATE.recording.mediaRecorder.state === "paused");
+}
+
+// Pauza/nastavak nad aktivnim MediaRecorder-om (Web Speech ne podržava pauzu).
+function pauseResumeRecording() {
+  const rec = STATE.recording;
+  if (!rec || !rec.mediaRecorder) return;
+  const mr = rec.mediaRecorder;
+  if (mr.state === "recording") {
+    try { mr.pause(); } catch (_) { return; }
+    STATE.recPausedAt = Date.now();
+    pauseAmpMeter();
+    buzz(30);
+  } else if (mr.state === "paused") {
+    try { mr.resume(); } catch (_) { return; }
+    if (STATE.recPausedAt) { STATE.recPausedMs += Date.now() - STATE.recPausedAt; STATE.recPausedAt = null; }
+    if (ampCtx && ampAnalyser && !ampRAF) ampTick();   // nastavi prsten
+    buzz(60);
+  } else { return; }
+  const fm = document.getElementById("focus-mic");
+  if (fm) fm.classList.toggle("paused", isRecPaused());
+  updateFocusClearLabel();
+  updateRecTimerLabels();
+}
+
+// Lijevo kokpit-dugme: dok snima = Pauza/Nastavi; inače = normalna uloga (Nova/Obriši).
+function updateFocusClearLabel() {
+  const fClear = document.getElementById("focus-clear");
+  if (!fClear) return;
+  if (STATE.recording && STATE.recording.mediaRecorder) {
+    fClear.textContent = isRecPaused() ? "▶ Nastavi" : "⏸ Pauza";
+    fClear.classList.remove("danger");
+    return;
+  }
+  const sid = STATE.focusSectionId;
+  const sdef = sid ? (STATE.config.sections || []).find(s => s.id === sid) : null;
+  if (sdef && sdef.multi) { fClear.textContent = "➕ Nova"; fClear.classList.remove("danger"); }
+  else { fClear.textContent = "✕ Obriši"; fClear.classList.add("danger"); }
 }
 
 function updateRecTimerLabels() {
   const t = recElapsed();
+  const paused = isRecPaused();
   const badge = document.getElementById("rec-timer");
   if (badge) {
     const show = !!STATE.recording && !!t;
     badge.classList.toggle("show", show);
-    if (show) badge.textContent = "● " + t;
+    badge.classList.toggle("paused", show && paused);
+    if (show) badge.textContent = (paused ? "⏸ " : "● ") + t;
   }
   if (!STATE.recording || !t) return;
   // Inline mic dugmad (pilule sa tekstom) dobiju vrijeme u labelu
   document.querySelectorAll(".btn-mic.recording .mic-label").forEach(l => {
-    l.textContent = "Zaustavi · " + t;
+    l.textContent = (paused ? "Pauza · " : "Zaustavi · ") + t;
   });
   const om = document.getElementById("okolnosti-mic");
-  if (om && om.classList.contains("recording")) om.textContent = "⏹ " + t;
+  if (om && om.classList.contains("recording")) om.textContent = (paused ? "⏸ " : "⏹ ") + t;
 }
 
 function updateMicButtonState(sectionId, state) {
@@ -2790,6 +2883,8 @@ async function init() {
   const fClear = $("#focus-clear");
   const fMerge = $("#focus-merge");
   if (fClear) fClear.addEventListener("click", () => {
+    // Dok snima, lijevo dugme je Pauza/Nastavi (a ne Nova/Obriši)
+    if (STATE.recording && STATE.recording.mediaRecorder) { pauseResumeRecording(); return; }
     const sid = STATE.focusSectionId;
     if (!sid) return;
     const sdef = (STATE.config.sections || []).find(s => s.id === sid);

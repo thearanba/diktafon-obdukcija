@@ -15,6 +15,7 @@
   --danger: #cf3a3a;
   --warn: #E08A1E;
   --record: #cf3a3a;
+  --mic-amp: 0;   /* živi nivo zvuka (0..1) — JS ga osvježava dok snima */
 }
 html, body {
   background: var(--bg);
@@ -535,6 +536,8 @@ body.has-fullscreen { overflow: hidden; }
   box-shadow: 0 2px 8px rgba(0,0,0,0.45);
 }
 .rec-timer.show { display: block; }
+/* Pauzirano: badge u amber tonu umjesto crvenog „snima" */
+.rec-timer.paused { background: var(--surface-2); color: var(--primary); border: 1px solid var(--primary); }
 .focus-row { display: flex; align-items: center; gap: 8px; }
 .focus-prevnext .focus-side { flex: 1; }
 .focus-actions { justify-content: center; }
@@ -582,7 +585,16 @@ body.has-fullscreen { overflow: hidden; }
   background: var(--danger);
   border-color: var(--danger);
   color: #fff;
-  animation: pulse 1.2s infinite;
+  /* Živi prsten: širina raste s jačinom glasa (--mic-amp) */
+  box-shadow: 0 0 0 calc(var(--mic-amp) * 16px) rgba(207, 58, 58, 0.30);
+  transition: box-shadow 0.07s linear;
+}
+/* Pauzirano: mirno (amber), bez prstena */
+.focus-mic.paused {
+  background: var(--surface-2);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: none;
 }
 /* "Spoji" dok Claude radi — jasna promjena boje (plava → amber) + spinner tekst */
 .focus-act.working {
@@ -734,6 +746,7 @@ body.has-fullscreen { overflow: hidden; }
   z-index: 400;
   background: var(--bg);
   overflow-y: auto;
+  animation: fadeIn 0.15s ease-out;   /* nježno otvaranje fokus-prozora */
 }
 .fs-overlay-header {
   position: sticky;
@@ -1134,7 +1147,9 @@ button {
   background: var(--record);
   color: #fff;
   border-color: var(--record);
-  animation: pulse 1.2s infinite;
+  /* Živi prsten nivoa zvuka i na inline mikrofonu */
+  box-shadow: 0 0 0 calc(var(--mic-amp) * 9px) rgba(207, 58, 58, 0.30);
+  transition: box-shadow 0.07s linear;
 }
 .btn-mic.processing {
   background: var(--warn);
@@ -1247,6 +1262,11 @@ button {
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   max-width: 90%;
   text-align: center;
+  animation: toastIn 0.22s ease-out;   /* nježno kliz + fade (JS restartuje pri svakom toastu) */
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
 }
 .toast.hidden { display: none; }
 /* U fokus-modu donja traka (~110px + safe area) bi prekrila toast na bottom:30px —
