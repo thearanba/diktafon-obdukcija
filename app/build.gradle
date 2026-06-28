@@ -9,11 +9,13 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'ba.forenzika.diktafon'
+        // v2 (redizajn) = ZASEBNA aplikacija — instalira se PORED stare (drugi applicationId).
+        // namespace ostaje isti (paket koda/R klase); samo instalacioni ID se razlikuje.
+        applicationId 'ba.forenzika.diktafon.v2'
         minSdk 29          // Android 10 — pojednostavljuje MediaStore (Downloads bez dozvole)
         targetSdk 34
         versionCode 1
-        versionName '1.0'
+        versionName '2.0'
 
         ndk {
             // S25 Ultra je arm64-v8a; x86_64 je za emulator

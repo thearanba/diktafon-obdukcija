@@ -1,0 +1,79 @@
+name: Build APK v2
+
+# Redizajn (Diktafon v2) — ZASEBNA aplikacija (applicationId .v2), instalira se PORED stare.
+# Objavljuje se u zaseban Release tag `v2`, pa stara verzija (`latest`) ostaje netaknuta.
+on:
+  push:
+    branches: [ v2 ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python (Chaquopy buildPython)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      # TRAJAN potpis: ako keystore još nije u repou, generiši ga JEDNOM i upiši ga
+      # nazad (sa [skip ci] da ne pokrene novi build). Od tada svaki v2 build ima ISTI
+      # potpis → v2 se uvijek instalira PREKO postojeće v2, bez deinstalacije.
+      - name: Ensure committed debug keystore
+        run: |
+          if [ -f keystore/debug.keystore ]; then
+            echo "Keystore već u repou — koristim njega."
+          else
+            echo "Generišem stabilan keystore (jednokratno) i upisujem ga u repo..."
+            mkdir -p keystore
+            keytool -genkeypair -v -keystore keystore/debug.keystore \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Diktafon Obdukcija v2 Debug, O=Forenzika, C=BA"
+            git config user.email "diktafon@local"
+            git config user.name "Diktafon Build"
+            git add -f keystore/debug.keystore
+            git commit -m "Stabilan debug keystore za v2 (jednokratno) [skip ci]"
+            git push origin HEAD:v2
+          fi
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK to app name
+        run: cp app/build/outputs/apk/debug/app-debug.apk "Diktafon v2.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diktafon-v2
+          path: "Diktafon v2.apk"
+          if-no-files-found: error
+
+      # Zaseban Release tag `v2` — NE dira `latest` (stara verzija ostaje).
+      - name: Publish APK to 'v2' Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2
+          name: Diktafon v2 (redizajn)
+          body: "Redizajn (dfm identitet). Zasebna aplikacija — instalira se pored stare. Tapni 'Diktafon v2.apk' za instalaciju."
+          files: "Diktafon v2.apk"

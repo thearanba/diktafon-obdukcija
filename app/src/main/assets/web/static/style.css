@@ -1,18 +1,20 @@
 /* Reset i osnovno */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface-2: #334155;
-  --border: #475569;
-  --text: #f1f5f9;
-  --text-dim: #94a3b8;
-  --primary: #3b82f6;
-  --primary-h: #2563eb;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warn: #f59e0b;
-  --record: #dc2626;
+  /* Identitet Katedre za sudsku medicinu (dfm): ugljeno-crna + koščano-bijela,
+     amber kao suzdržan akcenat (#E08A1E). Vidi vizitku/memorandum. */
+  --bg: #211d1e;
+  --surface: #2a2627;
+  --surface-2: #383331;
+  --border: #45403e;
+  --text: #efe9e1;
+  --text-dim: #9a948c;
+  --primary: #E08A1E;       /* amber — akcenat */
+  --primary-h: #c9791a;
+  --success: #1d9e75;
+  --danger: #cf3a3a;
+  --warn: #E08A1E;
+  --record: #cf3a3a;
 }
 html, body {
   background: var(--bg);
@@ -47,6 +49,7 @@ html, body {
   min-width: 0;
   flex: 1;
 }
+.topbar-logo { width: 22px; height: 22px; flex: 0 0 auto; }
 .topbar .title {
   font-weight: 700;
   font-size: 15px;
@@ -498,7 +501,8 @@ body.has-fullscreen { overflow: hidden; }
   font-weight: 600;
   cursor: pointer;
 }
-.seg-tab.active { background: var(--primary); color: #fff; }
+/* Aktivni tab: suzdržano — podignuta podloga + amber tekst (bez pune amber ispune) */
+.seg-tab.active { background: var(--surface); color: var(--primary); }
 
 /* Fokus-kokpit: donja traka — 2 reda (navigacija + akcije uz mikrofon) */
 .focus-nav {
@@ -559,21 +563,27 @@ body.has-fullscreen { overflow: hidden; }
   font-weight: 600;
   cursor: pointer;
 }
-.focus-act.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+/* "Spoji" u kokpitu: suzdržano — amber okvir umjesto pune ispune */
+.focus-act.primary { background: transparent; color: var(--primary); border-color: var(--primary); }
 .focus-act.danger { color: #fca5a5; }
 .focus-mic {
   flex: 0 0 auto;
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: var(--primary);
-  border: none;
-  color: #fff;
+  /* Ugljeni krug s amber prstenom; puni se bojom tek dok snima */
+  background: var(--surface-2);
+  border: 2px solid var(--primary);
+  color: var(--primary);
   font-size: 24px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
 }
-.focus-mic.recording { background: var(--danger); animation: pulse 1.2s infinite; }
+.focus-mic.recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  animation: pulse 1.2s infinite;
+}
 /* "Spoji" dok Claude radi — jasna promjena boje (plava → amber) + spinner tekst */
 .focus-act.working {
   background: var(--warn);
@@ -921,9 +931,10 @@ body.has-fullscreen { overflow: hidden; }
 }
 
 .btn-merge {
-  background: var(--primary);
-  color: white;
-  border: none;
+  /* Suzdržano: amber okvir umjesto pune ispune */
+  background: transparent;
+  color: var(--primary);
+  border: 1.5px solid var(--primary);
   border-radius: 7px;
   padding: 9px 14px;
   font-size: 14px;
@@ -932,7 +943,7 @@ body.has-fullscreen { overflow: hidden; }
   min-width: 80px;
   min-height: 40px;
 }
-.btn-merge:hover { background: var(--primary-h); }
+.btn-merge:hover { background: rgba(224,138,30,0.12); }
 .btn-merge:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* === Multi sekcije: lista atomskih stavki (povrede, kostur, ...) === */
@@ -1096,9 +1107,10 @@ button {
 }
 
 .btn-mic {
-  background: var(--record);
-  color: white;
-  border: none;
+  /* Mirno stanje: amber okvir (suzdržano); boja se puni tek tokom snimanja/obrade */
+  background: transparent;
+  color: var(--primary);
+  border: 1.5px solid var(--primary);
   border-radius: 7px;
   padding: 9px 14px;
   font-weight: 600;
@@ -1113,19 +1125,25 @@ button {
 }
 .btn-mic.preparing {
   background: var(--warn);
+  color: #211d1e;
+  border-color: var(--warn);
   /* Bez pulsiranja — korisnik treba da vidi da NIJE još "snima" */
   animation: none;
 }
 .btn-mic.recording {
-  background: var(--success);
+  background: var(--record);
+  color: #fff;
+  border-color: var(--record);
   animation: pulse 1.2s infinite;
 }
 .btn-mic.processing {
   background: var(--warn);
+  color: #211d1e;
+  border-color: var(--warn);
 }
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  50% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(207, 58, 58, 0.7); }
+  50% { box-shadow: 0 0 0 12px rgba(207, 58, 58, 0); }
 }
 
 .btn-cleanup {

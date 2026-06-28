@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Identitet Katedre (dfm): ugljeno-crna + koščano-bijela + suzdržan amber -->
+    <color name="dfm_charcoal">#211D1E</color>
+    <color name="dfm_surface">#2A2627</color>
+    <color name="dfm_amber">#E08A1E</color>
+    <color name="dfm_text">#EFE9E1</color>
+    <color name="dfm_text_dim">#9A948C</color>
+</resources>

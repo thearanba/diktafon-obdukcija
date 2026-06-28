@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Diktafon" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <item name="colorPrimary">#1e293b</item>
-        <item name="colorPrimaryVariant">#0f172a</item>
-        <item name="colorOnPrimary">#ffffff</item>
-        <item name="colorSecondary">#3b82f6</item>
-        <item name="android:statusBarColor">#0f172a</item>
+        <!-- Identitet Katedre (dfm): ugljeno-tamna baza, amber je samo akcenat.
+             ActionBar (Postavke) ostaje tamna; amber ide na kontrole (colorSecondary). -->
+        <item name="colorPrimary">@color/dfm_surface</item>
+        <item name="colorPrimaryVariant">@color/dfm_charcoal</item>
+        <item name="colorOnPrimary">@color/dfm_text</item>
+        <item name="colorSecondary">@color/dfm_amber</item>
+        <item name="colorOnSecondary">@color/dfm_charcoal</item>
+        <item name="android:statusBarColor">@color/dfm_charcoal</item>
+        <item name="android:windowBackground">@color/dfm_charcoal</item>
+        <item name="android:textColorPrimary">@color/dfm_text</item>
+        <item name="android:textColorSecondary">@color/dfm_text_dim</item>
+        <item name="android:textColorHint">#6F6862</item>
     </style>
 </resources>
