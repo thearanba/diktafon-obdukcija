@@ -75,5 +75,6 @@ jobs:
         with:
           tag_name: v2
           name: Diktafon v2 (redizajn)
+          prerelease: true   # da `releases/latest` ostane STARA verzija, a v2 zaseban
           body: "Redizajn (dfm identitet). Zasebna aplikacija — instalira se pored stare. Tapni 'Diktafon v2.apk' za instalaciju."
           files: "Diktafon v2.apk"
