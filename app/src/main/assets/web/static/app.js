@@ -1473,6 +1473,14 @@ function caseContext(excludeSid) {
   return ctx;
 }
 
+// Mjerenje prompt-keša: pokazuje da li Claude stvarno kešira (čita) ili samo upisuje,
+// ili uopšte ne kešira (prefiks ispod min. 2048 tok na Sonnet 4.6 → tiho ništa).
+function cacheTag(res) {
+  if (res.cache_read) return `keš✓ ${res.cache_read} čit`;
+  if (res.cache_create) return `keš upisan ${res.cache_create}`;
+  return "keš: ne";
+}
+
 // === Merge (Opcija B) ===
 async function mergeSection(sectionId) {
   if (!STATE.config.claude_available) {
@@ -1518,7 +1526,7 @@ async function mergeSection(sectionId) {
     if (_card) switchTab(_card, "final");
     updateSectionStatus(sectionId);
     autoSave();
-    toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out} tokens)`, "success");
+    toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out} tok · ${cacheTag(res)})`, "success");
   } catch (err) {
     toast("Greška: " + err.message, "error");
   } finally {
@@ -1888,7 +1896,7 @@ async function mergeItem(sectionId, itemIdx) {
     if (_ic) switchTab(_ic, "final");
     updateSectionStatus(sectionId);
     autoSave();
-    toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out})`, "success");
+    toast(`Spojeno ✓ (${res.tokens_in}+${res.tokens_out} tok · ${cacheTag(res)})`, "success");
   } catch (err) {
     toast("Greška: " + err.message, "error");
   } finally {
