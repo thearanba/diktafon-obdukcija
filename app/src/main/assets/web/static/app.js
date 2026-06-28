@@ -2555,6 +2555,34 @@ function closeDraftsModal(overlay) {
   if (overlay && overlay.parentElement) overlay.parentElement.removeChild(overlay);
 }
 
+// === Uvoz draftova iz ZIP-a (rezultat „Izvezi drafte") ===
+// Spaja sa postojećima — server (Python) NIKAD ne pregazi postojeći draft.
+async function importDrafts() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".zip,application/zip";
+  input.style.display = "none";
+  document.body.appendChild(input);
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    input.remove();
+    if (!file) return;
+    try {
+      const zip_b64 = await blobToBase64(file);
+      const res = await nativeCall("import_drafts", { zip_b64 });
+      if (res && res.__error) throw new Error(res.detail || ("status " + res.status));
+      await refreshDraftsFromServer();   // povuci novouvezene u lokalni keš
+      updateDraftIndicator();
+      const sk = res.skipped ? ` (preskočeno ${res.skipped})` : "";
+      toast(`Uvezeno ${res.imported} draftova${sk} ✓`, "success");
+      openDraftsModal();
+    } catch (err) {
+      toast("Uvoz: " + err.message, "error");
+    }
+  });
+  input.click();
+}
+
 // === Izvoz svih draftova (ZIP u Download) — sigurnosna kopija ===
 // Jedini uređaj + isključen cloud backup → ovo je jedina rezerva diktiranog rada.
 async function exportDrafts() {
@@ -2733,6 +2761,11 @@ async function init() {
     if (mExport) mExport.addEventListener("click", () => {
       menu.classList.remove("show");
       exportDrafts();
+    });
+    const mImport = $("#menu-import");
+    if (mImport) mImport.addEventListener("click", () => {
+      menu.classList.remove("show");
+      importDrafts();
     });
     const mSettings = $("#menu-settings");
     const mReload = $("#menu-reload");

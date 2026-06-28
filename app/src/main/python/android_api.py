@@ -594,6 +594,61 @@ def ep_export_drafts(_payload):
     }
 
 
+def ep_import_drafts(payload):
+    """Uveze drafte iz ZIP-a (rezultat „Izvezi drafte"). Spaja sa postojećima —
+    NIKAD ne pregazi postojeći draft: ako id već postoji, uvozi pod novim id-om uz
+    „(uvezeno)" u nazivu. Vraća broj uvezenih/preskočenih."""
+    import io
+    import zipfile
+    b64 = payload.get("zip_b64", "")
+    if not b64:
+        raise ApiError(400, "Prazan fajl.")
+    try:
+        raw = base64.b64decode(b64)
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except Exception:
+        raise ApiError(400, "Nevažeći ZIP fajl.")
+
+    existing = {fp.stem for fp in DRAFTS_DIR.glob("*.json")}
+    imported = 0
+    skipped = 0
+    for nm in zf.namelist():
+        if not nm.lower().endswith(".json"):
+            continue
+        try:
+            data = json.loads(zf.read(nm).decode("utf-8"))
+        except Exception:
+            skipped += 1
+            continue
+        if not isinstance(data, dict) or ("header" not in data and "sections" not in data):
+            skipped += 1
+            continue
+        base_id = _safe_draft_id(str(data.get("id") or Path(nm).stem)) or "d_imp"
+        name = data.get("name") or "Uvezeni draft"
+        did = base_id
+        if did in existing:
+            n = 1
+            while f"{base_id}_{n}" in existing:
+                n += 1
+            did = f"{base_id}_{n}"
+            name = f"{name} (uvezeno)"
+        out = {
+            "id": did,
+            "name": name,
+            "header": data.get("header", {}) or {},
+            "sections": data.get("sections", {}) or {},
+            "updatedAt": data.get("updatedAt", 0),
+        }
+        (DRAFTS_DIR / f"{did}.json").write_text(
+            json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        existing.add(did)
+        imported += 1
+
+    if imported == 0:
+        raise ApiError(400, "U ZIP-u nema validnih draftova.")
+    return {"imported": imported, "skipped": skipped}
+
+
 def ep_drafts_list(_payload):
     drafts = []
     for fp in DRAFTS_DIR.glob("*.json"):
@@ -652,6 +707,7 @@ _ROUTES = {
     "generate": ep_generate,
     "drafts_list": ep_drafts_list,
     "export_drafts": ep_export_drafts,
+    "import_drafts": ep_import_drafts,
     "provjera": ep_provjera,
     "draft_get": ep_draft_get,
     "draft_put": ep_draft_put,
