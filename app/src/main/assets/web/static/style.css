@@ -122,11 +122,12 @@ html, body {
   font-weight: 400;
 }
 #draft-name-indicator {
+  /* Puno ime slučaja u JEDNOM redu — bez max-width (status badge je uklonjen iz
+     trake pa ima prostora); shrink-to-fit fontom da i duži broj predmeta stane. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 240px;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
 }
@@ -365,6 +366,12 @@ html, body {
 .status.ok { background: var(--success); color: white; }
 .status.warn { background: var(--warn); color: white; }
 .status.err { background: var(--danger); color: white; }
+/* Status (STT/Claude) sada živi u padajućem meniju kao info-red na vrhu */
+.topbar-menu #status-badge {
+  align-self: flex-start;
+  margin: 8px 14px 0;
+  font-size: 12px;
+}
 
 #app {
   padding: 12px;
