@@ -1224,14 +1224,18 @@ function renderSingleBody(s) {
     ? templateText.length > 280 ? templateText.slice(0, 280) + "..." : templateText
     : (s.hint || "Diktiraj samo razlike od template-a, kratko.");
 
+  // PREGLED je default: sekcija sa finalnim tekstom otvara tab "Finalno";
+  // "Diktat" samo dok finalnog još nema (mikrofon ionako auto-prebaci na Diktat).
+  const showFinal = !!(sec.final || "").trim();
+
   return `
     <div class="card-body">
       <div class="seg-tabs">
-        <button class="seg-tab active" data-tab="raw">Diktat</button>
-        <button class="seg-tab" data-tab="final">Finalno</button>
+        <button class="seg-tab ${showFinal ? '' : 'active'}" data-tab="raw">Diktat</button>
+        <button class="seg-tab ${showFinal ? 'active' : ''}" data-tab="final">Finalno</button>
       </div>
 
-      <div class="tab-pane" data-pane="raw">
+      <div class="tab-pane" data-pane="raw" ${showFinal ? 'style="display:none;"' : ''}>
         ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
         ${templateText ? `
           <button class="dict-default-toggle" data-show-default>📋 Prikaži pun template paragraf</button>
@@ -1248,7 +1252,7 @@ function renderSingleBody(s) {
         </div>
       </div>
 
-      <div class="tab-pane" data-pane="final" style="display:none;">
+      <div class="tab-pane" data-pane="final" ${showFinal ? '' : 'style="display:none;"'}>
         <textarea class="dict-textarea final" data-section-id="${s.id}" data-target="final"
           placeholder="Ovdje će se pojaviti spojen tekst nakon klika na 🪄 Spoji.">${escapeHtml(sec.final || '')}</textarea>
         <div class="dict-controls final-controls">
@@ -1279,6 +1283,8 @@ function renderItem(s, idx, item, total) {
   const itemNoun = s.id === "s11_kostur" ? "Prelom" :
                    s.id === "misljenje" ? "Tačka" :
                    s.id === "dodatne" ? "Stavka" : "Povreda";
+  // PREGLED je default: stavka sa finalnim tekstom otvara tab "Finalno"
+  const itemShowFinal = !!(item.final || "").trim();
   const placeholderRaw = s.id === "s3_povrede"
     ? "Npr: oguljotina obraza 2x1 tamnocrvena"
     : s.id === "s11_kostur"
@@ -1302,17 +1308,17 @@ function renderItem(s, idx, item, total) {
       </div>
 
       <div class="seg-tabs">
-        <button class="seg-tab active" data-tab="raw">Diktat</button>
-        <button class="seg-tab" data-tab="final">Finalno</button>
+        <button class="seg-tab ${itemShowFinal ? '' : 'active'}" data-tab="raw">Diktat</button>
+        <button class="seg-tab ${itemShowFinal ? 'active' : ''}" data-tab="final">Finalno</button>
       </div>
 
-      <div class="tab-pane" data-pane="raw">
+      <div class="tab-pane" data-pane="raw" ${itemShowFinal ? 'style="display:none;"' : ''}>
         <textarea class="dict-textarea raw item-raw" data-item-target="raw"
           data-item-section="${s.id}" data-item-idx="${idx}"
           placeholder="${escapeAttr(placeholderRaw)}">${escapeHtml(item.raw || '')}</textarea>
       </div>
 
-      <div class="tab-pane" data-pane="final" style="display:none;">
+      <div class="tab-pane" data-pane="final" ${itemShowFinal ? '' : 'style="display:none;"'}>
         <textarea class="dict-textarea final item-final" data-item-target="final"
           data-item-section="${s.id}" data-item-idx="${idx}"
           placeholder="Spojen tekst stavke se pojavi ovdje.">${escapeHtml(item.final || '')}</textarea>
