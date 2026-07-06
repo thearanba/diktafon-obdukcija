@@ -906,6 +906,13 @@ body.has-fullscreen { overflow: hidden; }
 }
 
 /* Sekcija diktiranja */
+/* Auto-rast BEZ JS-a (WebView/Chrome 123+): browser sam veliča textarea sa sadržajem,
+   kursor pri brisanju/selekciji ostaje stabilan (nema height-reset skakanja).
+   Na starijim WebView JS autoGrow fallback i dalje radi. */
+@supports (field-sizing: content) {
+  textarea { field-sizing: content; }
+}
+
 .dict-textarea {
   width: 100%;
   min-height: 90px;
@@ -921,10 +928,10 @@ body.has-fullscreen { overflow: hidden; }
   scroll-margin-top: 60px;
 }
 .dict-textarea.raw {
-  background: #1a2436;
+  background: #262122;   /* topla tamna (v2 paleta) — bila stara plava #1a2436 */
   border-color: var(--surface-2);
   font-style: italic;
-  color: #cbd5e1;
+  color: #cfc9c1;
 }
 .dict-textarea.final {
   background: var(--bg);
@@ -1274,6 +1281,10 @@ button {
 body.has-fullscreen .toast {
   bottom: calc(150px + env(safe-area-inset-bottom));
 }
+
+/* Uviđaj brzi unosi (vrijeme početka, GPS) — red dugmadi iznad textarea */
+.uvidjaj-quick { display: flex; gap: 8px; margin: 2px 0 12px; }
+.uvidjaj-quick .btn-quick { flex: 1; min-height: 42px; }
 
 /* Tekstualni modal (rezultat provjere zapisnika) */
 .text-modal-body {

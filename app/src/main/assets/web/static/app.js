@@ -726,6 +726,17 @@ function openOkolnostiOverlay() {
   const obody = document.createElement("div");
   obody.className = "fs-overlay-body";
   obody.appendChild(buildUvidjajSwitch());
+  // Uviđaj mod: brzi unosi na VRH teksta — vrijeme početka i GPS lokacija.
+  // Namjerno BEZ reverse-geocodinga (adresa bi zahtijevala slanje lokacije vanjskom
+  // servisu) — koordinate su offline, privatne i egzaktne za pravni dokument.
+  if (STATE.header.uvidjaj_lock) {
+    const quick = document.createElement("div");
+    quick.className = "uvidjaj-quick";
+    quick.innerHTML = `
+      <button type="button" id="uvidjaj-time" class="btn-quick">🕐 Vrijeme početka</button>
+      <button type="button" id="uvidjaj-gps" class="btn-quick">📍 GPS lokacija</button>`;
+    obody.appendChild(quick);
+  }
   const taWrap = document.createElement("div");
   taWrap.className = "field";
   taWrap.innerHTML = `<textarea class="dict-textarea" id="okolnosti-fs-ta" data-header-id="okolnosti" placeholder="Opiši okolnosti / uviđaj…">${escapeHtml(STATE.header.okolnosti || "")}</textarea>`;
@@ -776,6 +787,45 @@ function bindOkolnostiOverlay(ov) {
   if (mic) mic.addEventListener("click", () => toggleOkolnostiMic(mic));
   const dor = ov.querySelector("#okolnosti-cleanup");
   if (dor) dor.addEventListener("click", () => cleanupOkolnosti(dor));
+
+  // Uviđaj brzi unosi (vidljivi samo u Uviđaj modu)
+  const tBtn = ov.querySelector("#uvidjaj-time");
+  if (tBtn) tBtn.addEventListener("click", () => {
+    const d = new Date();
+    const p2 = n => String(n).padStart(2, "0");
+    prependToOkolnosti(
+      `Uviđaj započet ${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}. godine u ${p2(d.getHours())}:${p2(d.getMinutes())} sati.`);
+    toast("Vrijeme početka dodano ✓", "success");
+  });
+  const gBtn = ov.querySelector("#uvidjaj-gps");
+  if (gBtn) gBtn.addEventListener("click", () => {
+    if (!navigator.geolocation) { toast("GPS nije dostupan na uređaju", "error"); return; }
+    const old = gBtn.textContent;
+    gBtn.disabled = true;
+    gBtn.textContent = "⏳ Tražim GPS…";
+    navigator.geolocation.getCurrentPosition(pos => {
+      const c = pos.coords;
+      prependToOkolnosti(
+        `GPS lokacija uviđaja: ${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)} (tačnost ±${Math.round(c.accuracy)} m).`);
+      toast("Lokacija dodana ✓", "success");
+      gBtn.disabled = false; gBtn.textContent = old;
+    }, err => {
+      toast("GPS greška: " + (err.message || ("kod " + err.code)), "error");
+      gBtn.disabled = false; gBtn.textContent = old;
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+  });
+}
+
+// Umetni liniju na VRH okolnosti/uviđaj teksta (brzi unosi: vrijeme, GPS)
+function prependToOkolnosti(line) {
+  if (!line) return;
+  const cur = (STATE.header.okolnosti || "").trim();
+  STATE.header.okolnosti = cur ? line + "\n" + cur : line;
+  const ta = document.getElementById("okolnosti-fs-ta")
+    || document.querySelector('textarea[data-header-id="okolnosti"]');
+  if (ta) { ta.value = STATE.header.okolnosti; autoGrow(ta); ta.scrollTop = 0; }
+  updateHeaderSummary();
+  autoSave();
 }
 
 function setOkolnostiMicState(btn, state) {
@@ -1070,9 +1120,16 @@ function updateHeaderSummary() {
 
 // === Render: dictation sections (Opcija B - kratka diktacija + Claude merge) ===
 // Textarea raste sa sadržajem (visina = scrollHeight). Radi samo kad je vidljiva.
+// Moderni WebView (Chrome 123+) auto-veliča textarea kroz CSS `field-sizing: content`
+// — bez JS mjerenja, pa kursor pri brisanju/selekciji ostaje stabilno u vidnom polju.
+// (JS varijanta ispod je radila height="auto"→scrollHeight na SVAKI znak + nasilni
+//  scroll restore, što je pomjeralo tekst van ekrana pri brisanju s tastaturom vani.)
+const NATIVE_AUTOGROW = !!(window.CSS && CSS.supports && CSS.supports("field-sizing", "content"));
+
 function autoGrow(ta) {
   if (!ta) return;
-  // Sačuvaj poziciju skrola kontejnera — da kucanje (reset height:auto) ne "skoči" na vrh
+  if (NATIVE_AUTOGROW) return;  // browser sam veliča — ne diraj height ni scroll
+  // Fallback za starije WebView: sačuvaj skrol kontejnera da kucanje ne "skoči" na vrh
   const sc = ta.closest(".card.fullscreen, .fs-overlay");
   const top = sc ? sc.scrollTop : 0;
   ta.style.height = "auto";

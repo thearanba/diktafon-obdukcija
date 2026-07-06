@@ -14,6 +14,7 @@ import android.util.Base64
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.webkit.GeolocationPermissions
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
@@ -84,12 +85,15 @@ class MainActivity : AppCompatActivity() {
 
         configureWebView()
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.RECORD_AUDIO), REQ_AUDIO
-            )
+        // Runtime dozvole: mikrofon (diktiranje) + lokacija (GPS uviđaja) — traži nedostajuće
+        val missing = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ).filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQ_AUDIO)
         }
 
         // API ključevi iz šifrovanog skladišta (SecurePrefs migrira stare pri prvom pristupu)
@@ -116,6 +120,7 @@ class MainActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             allowFileAccess = false
             allowContentAccess = false
+            setGeolocationEnabled(true)   // GPS lokacija uviđaja (navigator.geolocation)
         }
         webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
 
@@ -132,6 +137,14 @@ class MainActivity : AppCompatActivity() {
                     it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
                 }.toTypedArray()
                 if (wanted.isNotEmpty()) request.grant(wanted) else request.deny()
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?, callback: GeolocationPermissions.Callback?
+            ) {
+                // Lokalna aplikacija (appassets origin) — odobri geolokaciju; sistemsku
+                // runtime dozvolu (ACCESS_FINE_LOCATION) traži onCreate.
+                callback?.invoke(origin, true, false)
             }
 
             override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
