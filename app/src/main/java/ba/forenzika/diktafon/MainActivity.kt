@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
         const val MENU_RELOAD = 2
         const val REQ_AUDIO = 100
         const val REQ_FILE = 200
+        const val REQ_SAVE_AS = 300
         const val BASE_URL = "https://appassets.androidplatform.net/index.html"
     }
 
@@ -57,6 +58,9 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var pyApi: PyObject? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
+    // „Generiši u…" (SAF picker): bytes čekaju dok korisnik bira lokaciju (i OneDrive)
+    private var pendingSaveBytes: ByteArray? = null
+    private var pendingSaveName: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -202,6 +206,23 @@ class MainActivity : AppCompatActivity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SAVE_AS) {
+            val bytes = pendingSaveBytes
+            pendingSaveBytes = null
+            val uri = data?.data
+            if (resultCode == Activity.RESULT_OK && uri != null && bytes != null) {
+                try {
+                    contentResolver.openOutputStream(uri, "wt").use { it!!.write(bytes) }
+                    Toast.makeText(this, "Snimljeno: $pendingSaveName", Toast.LENGTH_LONG).show()
+                    openDocx(uri,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                } catch (e: Exception) {
+                    Log.e(TAG, "SaveAs upis: ${e.message}", e)
+                    Toast.makeText(this, "Greška snimanja: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            return
+        }
         if (requestCode == REQ_FILE) {
             val cb = filePathCallback
             filePathCallback = null
@@ -300,6 +321,40 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        /** Obrnuto geokodiranje NATIVNIM Android Geocoder-om (GPS uviđaja → adresa).
+         *  Async: rezultat {"address": "Ulica broj, Grad"} ide nazad kroz __nativeResolve. */
+        @JavascriptInterface
+        fun reverseGeocode(reqId: String, lat: Double, lng: Double) {
+            pyExecutor.execute {
+                val address = try {
+                    @Suppress("DEPRECATION")
+                    val list = android.location.Geocoder(
+                        this@MainActivity, java.util.Locale("bs", "BA")
+                    ).getFromLocation(lat, lng, 1)
+                    val a = list?.firstOrNull()
+                    if (a == null) "" else {
+                        val street = listOfNotNull(a.thoroughfare, a.subThoroughfare)
+                            .joinToString(" ").trim()
+                        val city = a.locality ?: a.subAdminArea ?: ""
+                        val parts = mutableListOf<String>()
+                        if (street.isNotBlank()) parts.add(street)
+                        if (city.isNotBlank()) parts.add(city)
+                        if (parts.isEmpty()) (a.getAddressLine(0) ?: "") else parts.joinToString(", ")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "reverseGeocode: ${e.message}")
+                    ""
+                }
+                val json = """{"address":${jsonString(address)}}"""
+                val b64 = Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                webView.post {
+                    webView.evaluateJavascript(
+                        "window.__nativeResolve && window.__nativeResolve('$reqId','$b64')", null
+                    )
+                }
+            }
+        }
+
         /** Snimi proizvoljan fajl (base64) u javni Download folder — npr. ZIP izvoz draftova. */
         @JavascriptInterface
         fun saveFile(filename: String, base64Data: String, mime: String) {
@@ -326,6 +381,32 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     Toast.makeText(this@MainActivity,
                         "Greška snimanja: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        /** „Generiši u…": sistemski birač lokacije (SAF) — uključuje OneDrive, Drive,
+         *  lokalne foldere... Bytes čekaju u pendingSaveBytes do izbora u onActivityResult. */
+        @JavascriptInterface
+        fun saveDocxAs(filename: String, base64Data: String) {
+            try {
+                pendingSaveBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                pendingSaveName = if (filename.endsWith(".docx")) filename else "$filename.docx"
+                runOnUiThread {
+                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type =
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        putExtra(Intent.EXTRA_TITLE, pendingSaveName)
+                    }
+                    startActivityForResult(intent, REQ_SAVE_AS)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "saveDocxAs greška: ${e.message}", e)
+                pendingSaveBytes = null
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity,
+                        "Greška: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }

@@ -61,11 +61,29 @@ function migrateSectionState() {
 }
 
 // Multi-helpers
-function addItem(sid) {
+// Ubaci novu stavku ISPOD afterIdx (null/van opsega = na kraj). Vraća indeks nove.
+function addItem(sid, afterIdx) {
   const sec = getSection(sid);
-  if (!sec.items) return;
-  sec.items.push({ raw: "", final: "" });
+  if (!sec.items) return 0;
+  const pos = (afterIdx != null && afterIdx >= 0 && afterIdx < sec.items.length)
+    ? afterIdx + 1
+    : sec.items.length;
+  sec.items.splice(pos, 0, { raw: "", final: "" });
   autoSave();
+  return pos;
+}
+
+// Pomjeri stavku gore/dolje (dir = -1 / +1). Vraća novi indeks (ili null ako nema pomaka).
+function moveItem(sid, idx, dir) {
+  const sec = getSection(sid);
+  if (!sec.items) return null;
+  const j = idx + dir;
+  if (idx < 0 || idx >= sec.items.length || j < 0 || j >= sec.items.length) return null;
+  const t = sec.items[idx];
+  sec.items[idx] = sec.items[j];
+  sec.items[j] = t;
+  autoSave();
+  return j;
 }
 function removeItem(sid, idx) {
   const sec = getSection(sid);
@@ -733,8 +751,7 @@ function openOkolnostiOverlay() {
     const quick = document.createElement("div");
     quick.className = "uvidjaj-quick";
     quick.innerHTML = `
-      <button type="button" id="uvidjaj-time" class="btn-quick">🕐 Vrijeme početka</button>
-      <button type="button" id="uvidjaj-gps" class="btn-quick">📍 GPS lokacija</button>`;
+      <button type="button" id="uvidjaj-start" class="btn-quick">📍 Početak uviđaja (dan, datum, vrijeme, adresa)</button>`;
     obody.appendChild(quick);
   }
   const taWrap = document.createElement("div");
@@ -788,31 +805,59 @@ function bindOkolnostiOverlay(ov) {
   const dor = ov.querySelector("#okolnosti-cleanup");
   if (dor) dor.addEventListener("click", () => cleanupOkolnosti(dor));
 
-  // Uviđaj brzi unosi (vidljivi samo u Uviđaj modu)
-  const tBtn = ov.querySelector("#uvidjaj-time");
-  if (tBtn) tBtn.addEventListener("click", () => {
+  // Uviđaj brzi unos (vidljiv samo u Uviđaj modu): jedna rečenica na vrh —
+  // "Uviđaj dana <dan u sedmici>, DD.MM.YYYY. godine u HH:MM sati na adresi <adresa>."
+  const sBtn = ov.querySelector("#uvidjaj-start");
+  if (sBtn) sBtn.addEventListener("click", async () => {
+    const DANI_GEN = ["nedjelje", "ponedjeljka", "utorka", "srijede", "četvrtka", "petka", "subote"];
     const d = new Date();
     const p2 = n => String(n).padStart(2, "0");
-    prependToOkolnosti(
-      `Uviđaj započet ${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}. godine u ${p2(d.getHours())}:${p2(d.getMinutes())} sati.`);
-    toast("Vrijeme početka dodano ✓", "success");
-  });
-  const gBtn = ov.querySelector("#uvidjaj-gps");
-  if (gBtn) gBtn.addEventListener("click", () => {
-    if (!navigator.geolocation) { toast("GPS nije dostupan na uređaju", "error"); return; }
-    const old = gBtn.textContent;
-    gBtn.disabled = true;
-    gBtn.textContent = "⏳ Tražim GPS…";
-    navigator.geolocation.getCurrentPosition(pos => {
+    const uvod = `Uviđaj dana ${DANI_GEN[d.getDay()]}, ${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}. godine u ${p2(d.getHours())}:${p2(d.getMinutes())} sati`;
+    const old = sBtn.textContent;
+    sBtn.disabled = true;
+    sBtn.textContent = "⏳ Tražim lokaciju…";
+    const done = (msg, level) => { sBtn.disabled = false; sBtn.textContent = old; toast(msg, level); };
+    if (!navigator.geolocation) {
+      prependToOkolnosti(uvod + ".");
+      done("Dodano bez adrese (GPS nedostupan)", "error");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async pos => {
       const c = pos.coords;
-      prependToOkolnosti(
-        `GPS lokacija uviđaja: ${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)} (tačnost ±${Math.round(c.accuracy)} m).`);
-      toast("Lokacija dodana ✓", "success");
-      gBtn.disabled = false; gBtn.textContent = old;
+      const addr = await nativeGeocode(c.latitude, c.longitude);
+      if (addr) {
+        prependToOkolnosti(`${uvod} na adresi ${addr}.`);
+        done("Početak uviđaja dodan ✓", "success");
+      } else {
+        // Adresa nedostupna (bez mreže/geocoder) — koordinate kao rezerva, vještak dopiše adresu
+        prependToOkolnosti(`${uvod} na lokaciji ${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)} (±${Math.round(c.accuracy)} m).`);
+        done("Adresa nedostupna — upisane koordinate (dopiši adresu)", "error");
+      }
     }, err => {
-      toast("GPS greška: " + (err.message || ("kod " + err.code)), "error");
-      gBtn.disabled = false; gBtn.textContent = old;
+      prependToOkolnosti(uvod + ".");
+      done("Dodano bez adrese — GPS: " + (err.message || ("kod " + err.code)), "error");
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+  });
+}
+
+// Obrnuto geokodiranje preko NATIVNOG Android Geocoder-a (bez slanja trećim servisima
+// mimo sistema). Vraća "Ulica broj, Grad" ili "" ako nedostupno. Async preko mosta.
+function nativeGeocode(lat, lng) {
+  return new Promise((resolve) => {
+    if (!window.AndroidBridge || typeof AndroidBridge.reverseGeocode !== "function") {
+      resolve(""); return;
+    }
+    const reqId = "geo" + (++window.__nativeSeq) + "_" + Math.floor(performance.now());
+    window.__nativePending[reqId] = {
+      resolve: (obj) => resolve((obj && obj.address) || ""),
+      reject: () => resolve(""),
+    };
+    try {
+      AndroidBridge.reverseGeocode(reqId, lat, lng);
+    } catch (e) {
+      delete window.__nativePending[reqId];
+      resolve("");
+    }
   });
 }
 
@@ -1219,7 +1264,7 @@ function renderSingleBody(s) {
 function renderMultiBody(s) {
   const sec = getSection(s.id);
   const items = sec.items || [{ raw: "", final: "" }];
-  const itemsHtml = items.map((item, idx) => renderItem(s, idx, item)).join("");
+  const itemsHtml = items.map((item, idx) => renderItem(s, idx, item, items.length)).join("");
   const itemNoun = s.id === "s11_kostur" ? "prelom" :
                    s.id === "misljenje" ? "tačku mišljenja" :
                    s.id === "dodatne" ? "stavku" : "povredu";
@@ -1232,7 +1277,7 @@ function renderMultiBody(s) {
   `;
 }
 
-function renderItem(s, idx, item) {
+function renderItem(s, idx, item, total) {
   const itemNoun = s.id === "s11_kostur" ? "Prelom" :
                    s.id === "misljenje" ? "Tačka" :
                    s.id === "dodatne" ? "Stavka" : "Povreda";
@@ -1248,8 +1293,14 @@ function renderItem(s, idx, item) {
     <div class="item-card" data-item-idx="${idx}" data-item-section="${s.id}">
       <div class="item-header">
         <span class="item-num">${itemNoun} #${idx + 1}</span>
-        <button class="btn-item-remove" data-remove-item="${s.id}" data-remove-idx="${idx}"
-          title="Obriši stavku">✕</button>
+        <span class="item-tools">
+          <button class="btn-item-move" data-move-item="${s.id}" data-move-idx="${idx}"
+            data-move-dir="-1" title="Pomjeri gore" ${idx === 0 ? "disabled" : ""}>↑</button>
+          <button class="btn-item-move" data-move-item="${s.id}" data-move-idx="${idx}"
+            data-move-dir="1" title="Pomjeri dole" ${idx >= total - 1 ? "disabled" : ""}>↓</button>
+          <button class="btn-item-remove" data-remove-item="${s.id}" data-remove-idx="${idx}"
+            title="Obriši stavku">✕</button>
+        </span>
       </div>
 
       <div class="seg-tabs">
@@ -1287,8 +1338,22 @@ function bindSectionEvents(scope) {
   // Selekcija stavke (multi) — klik na stavku je čini aktivnom; donja traka radi nad njom
   container.querySelectorAll(".item-card").forEach(ic => {
     ic.addEventListener("click", (e) => {
-      if (e.target.closest("[data-remove-item]")) return;  // ✕ ne selektuje
+      if (e.target.closest("[data-remove-item], [data-move-item]")) return;  // ✕/↑/↓ ne selektuju
       selectFocusItem(parseInt(ic.dataset.itemIdx, 10));
+    });
+  });
+
+  // Pomjeranje stavke gore/dolje (naknadna promjena redoslijeda povreda/tačaka)
+  container.querySelectorAll("[data-move-item]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const sid = btn.dataset.moveItem;
+      const idx = parseInt(btn.dataset.moveIdx, 10);
+      const dir = parseInt(btn.dataset.moveDir, 10);
+      const j = moveItem(sid, idx, dir);
+      if (j == null) return;
+      rerenderMultiBody(sid);
+      if (STATE.focusSectionId === sid) selectFocusItem(j);
     });
   });
 
@@ -1411,15 +1476,16 @@ function bindSectionEvents(scope) {
   container.querySelectorAll("[data-add-item]").forEach(btn => {
     btn.addEventListener("click", () => {
       const sid = btn.dataset.addItem;
-      addItem(sid);
+      // Nova stavka ide ISPOD selektovane (ako je ova sekcija u fokusu), inače na kraj
+      const after = (STATE.focusSectionId === sid && STATE.focusItemIdx != null)
+        ? STATE.focusItemIdx : null;
+      const pos = addItem(sid, after);
       rerenderMultiBody(sid);
-      selectFocusItem(getSection(sid).items.length - 1);  // selektuj novu stavku
+      selectFocusItem(pos);  // selektuj novu stavku
       // Skroluj na novi item i fokusiraj
       setTimeout(() => {
-        const sec = getSection(sid);
-        const lastIdx = sec.items.length - 1;
         const ta = document.querySelector(
-          `textarea[data-item-section="${sid}"][data-item-idx="${lastIdx}"][data-item-target="raw"]`
+          `textarea[data-item-section="${sid}"][data-item-idx="${pos}"][data-item-target="raw"]`
         );
         if (ta) {
           ta.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -2402,7 +2468,9 @@ function showTextModal(title, text) {
 }
 
 // === Generate ===
-async function generateReport() {
+// saveAs=false → direktno u Download; saveAs=true → sistemski birač lokacije
+// (SAF: lokalni folderi, OneDrive, Drive...) preko AndroidBridge.saveDocxAs.
+async function generateReport(saveAs) {
   // Provjeri da li su ime i KT broj popunjeni — bez njih filename će biti "Zapisnik.docx"
   const ime = (STATE.header.ime_prezime || "").trim();
   const kt = (STATE.header.kt_broj || "").trim();
@@ -2454,8 +2522,13 @@ async function generateReport() {
     const res = await nativeCall("generate", { header: STATE.header, sections: flatSections });
     if (res && res.__error) throw new Error(res.detail || ("status " + res.status));
     const filename = res.filename || "zapisnik.docx";
-    window.AndroidBridge.saveDocx(filename, res.docx_b64);
-    toast("Zapisnik snimljen u Download ✓", "success");
+    if (saveAs && window.AndroidBridge && typeof AndroidBridge.saveDocxAs === "function") {
+      AndroidBridge.saveDocxAs(filename, res.docx_b64);
+      toast("Izaberi gdje snimiti (OneDrive, folder…)", "success");
+    } else {
+      window.AndroidBridge.saveDocx(filename, res.docx_b64);
+      toast("Zapisnik snimljen u Download ✓", "success");
+    }
   } catch (err) {
     toast("Greška generisanja: " + err.message, "error");
   } finally {
@@ -2899,7 +2972,13 @@ async function init() {
   $("#btn-drafts").addEventListener("click", openDraftsModal);
   $("#btn-new-draft").addEventListener("click", newDraft);
   $("#btn-clear").addEventListener("click", clearCurrent);
-  $("#btn-generate").addEventListener("click", generateReport);
+  $("#btn-generate").addEventListener("click", () => generateReport(false));
+  const mGenAs = $("#menu-generate-as");
+  if (mGenAs) mGenAs.addEventListener("click", () => {
+    const menu2 = $("#topbar-menu");
+    if (menu2) menu2.classList.remove("show");
+    generateReport(true);
+  });
 
   // ⋮ meni u traci (Postavke / Osvježi) — zamjena za nativnu ActionBar
   const menuBtn = $("#btn-menu");
@@ -2954,10 +3033,10 @@ async function init() {
     if (!sid) return;
     const sdef = (STATE.config.sections || []).find(s => s.id === sid);
     if (sdef && sdef.multi) {
-      // ➕ Nova stavka → dodaj i selektuj
-      addItem(sid);
+      // ➕ Nova stavka → ubaci ISPOD selektovane i selektuj je
+      const pos = addItem(sid, STATE.focusItemIdx);
       rerenderMultiBody(sid);
-      selectFocusItem(getSection(sid).items.length - 1);
+      selectFocusItem(pos);
     } else {
       document.querySelector(`[data-clear-raw="${sid}"]`)?.click();
     }
