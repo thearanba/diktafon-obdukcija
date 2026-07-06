@@ -1265,14 +1265,12 @@ function renderMultiBody(s) {
   const sec = getSection(s.id);
   const items = sec.items || [{ raw: "", final: "" }];
   const itemsHtml = items.map((item, idx) => renderItem(s, idx, item, items.length)).join("");
-  const itemNoun = s.id === "s11_kostur" ? "prelom" :
-                   s.id === "misljenje" ? "tačku mišljenja" :
-                   s.id === "dodatne" ? "stavku" : "povredu";
+  // Bez inline "+ Dodaj" dugmeta — dodavanje ide isključivo kroz „➕ Nova" u donjoj
+  // fokus-traci (sekcije se ionako uvijek otvaraju u fokus-modu; duplo je zbunjivalo).
   return `
     <div class="card-body">
       ${s.hint ? `<div class="dict-hint">${escapeHtml(s.hint)}</div>` : ''}
       <div class="items-container" data-items-for="${s.id}">${itemsHtml}</div>
-      <button class="btn-add-item" data-add-item="${s.id}">+ Dodaj ${itemNoun}</button>
     </div>
   `;
 }
@@ -1472,28 +1470,7 @@ function bindSectionEvents(scope) {
     });
   });
 
-  // Add / remove items
-  container.querySelectorAll("[data-add-item]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const sid = btn.dataset.addItem;
-      // Nova stavka ide ISPOD selektovane (ako je ova sekcija u fokusu), inače na kraj
-      const after = (STATE.focusSectionId === sid && STATE.focusItemIdx != null)
-        ? STATE.focusItemIdx : null;
-      const pos = addItem(sid, after);
-      rerenderMultiBody(sid);
-      selectFocusItem(pos);  // selektuj novu stavku
-      // Skroluj na novi item i fokusiraj
-      setTimeout(() => {
-        const ta = document.querySelector(
-          `textarea[data-item-section="${sid}"][data-item-idx="${pos}"][data-item-target="raw"]`
-        );
-        if (ta) {
-          ta.scrollIntoView({ behavior: "smooth", block: "center" });
-          ta.focus();
-        }
-      }, 50);
-    });
-  });
+  // Remove items (dodavanje: SAMO „➕ Nova" u donjoj fokus-traci)
   container.querySelectorAll("[data-remove-item]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const sid = btn.dataset.removeItem;
