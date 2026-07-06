@@ -1,7 +1,63 @@
 # Diktafon obdukcija — HANDOFF (nastavak u novoj sesiji)
 
 > Samostalan pregled stanja projekta da se rad nastavi bez gubitka konteksta.
-> Zadnji build: **#40** (audit 2: tačnost dokumenta + privatnost/podaci). Datum: 2026-06-12.
+> **AKTIVNO STANJE: v2 (vidi ispod). Datum zadnjeg rada: 06.07.2026.**
+> Istorijski dio (sekcije 1–7, v1) ostaje netaknut kao referenca ispod ovog bloka.
+
+---
+
+# ⭐ v2 — TRENUTNO AKTIVNO STANJE (čitati PRVO)
+
+## Dvije zasebne aplikacije (v1 zamrznuta, v2 aktivna)
+| | v1 (stara, ZAMRZNUTA) | **v2 (redizajn, AKTIVNA)** |
+|---|---|---|
+| Grana | `master` | **`v2`** ← sav rad ide ovdje |
+| Release tag | `latest` | **`v2`** (prerelease=true) |
+| applicationId | `ba.forenzika.diktafon` | `ba.forenzika.diktafon.v2` |
+| Ime app | „Diktafon obdukcija" | „Diktafon v2" |
+| Workflow | `build-apk.yml` | **`build-v2.yml`** |
+| Skidanje | `releases/latest` | `releases/tag/v2` → „Diktafon v2.apk" |
+
+- **Instaliraju se JEDNA PORED DRUGE** (drugi applicationId, odvojeni podaci). v1 se NE dira.
+- `prerelease=true` na v2 → `releases/latest` i dalje pokazuje v1. Ako mijenjaš `build-v2.yml`, **zadrži `prerelease: true`** (inače v2 „ukrade" latest jer je najnoviji po datumu).
+
+## Git rad na v2 (VAŽNO — postoje i TAG `v2` i GRANA `v2`, isto ime!)
+- **Push:** `git push origin HEAD:refs/heads/v2` (obično `git push origin v2` je dvosmisleno).
+- **Sinhronizacija** (CI zna dodati keystore commit): `git fetch origin refs/heads/v2:refs/remotes/origin/v2 --force` pa `git reset --hard origin/v2` (lokalno je uvijek predak; radi se i `git tag -d v2` za lokalni tag).
+- **Potpis TRAJAN na v2:** `keystore/debug.keystore` je UPISAN u repo (`build-v2.yml` ga jednokratno generiše + commit „[skip ci]"). Zato se v2 uvijek instalira PREKO postojeće v2. (v1 keystore je i dalje samo u CI kešu → v1 zna tražiti deinstalaciju; nije popravljano jer je zamrznuta.)
+- **[skip ci]** u commit poruci preskače v2 build (koristiti za doc-only izmjene poput ovog HANDOFF-a).
+
+## v2 dizajn (dfm identitet Katedre)
+- Boje u `assets/web/static/style.css` `:root`: `--bg #211D1E` (ugljena), `--text #EFE9E1`, `--primary #E08A1E` (amber, SUZDRŽAN — prsten/okvir/podvlaka, NE pune ispune), `--success #1d9e75`, `--record/danger #cf3a3a`.
+- **Logo:** pravi vektor iz `OneDrive\...\vizitka f.pdf` (PyMuPDF, crteži 5–8 = 4 pločice d/o/f/m). Web: `assets/web/static/dfm-logo.svg` (varijanta C: BIJELA slova, ploče `currentColor`, amber obrub). Native: `res/drawable/dfm_logo.xml` (VectorDrawable). fitz rasterizer IGNORIŠE fill-rule (lažno izgleda krivo) → provjeravati cairosvg ili WebView.
+- Login (nativni): `res/layout/activity_login.xml` + `themes.xml` + `res/values/colors.xml` (dfm_charcoal/amber/text/text_dim). dfm logo + serif „Department of Forensic Medicine" + amber nit + outline dugmad.
+
+## Šta je NOVO u v2 (ova sesija, sve na grani v2)
+1. **Traka:** Groq/Claude status u ⋮ meni (ne u vrhu); ime slučaja PUNO u jednom redu; mini dfm logo lijevo.
+2. **Uvoz draftova** (par za Izvoz): ⋮ „📥 Uvezi drafte (ZIP)" → `import_drafts` endpoint; nikad ne pregazi (konflikt = nov id + „(uvezeno)").
+3. **Živi prsten nivoa zvuka** oko mikrofona (WebAudio `--mic-amp`) + **PAUZA/NASTAVAK** (`MediaRecorder.pause/resume`; lijevo kokpit-dugme postaje Pauza/Nastavi dok snima; timer staje). Animacije suzdržane: toast slide-in, fs-overlay fade.
+4. **Mjerenje prompt-keša:** „Spojeno ✓" toast pokazuje `cache_read`/`cache_create` (keš✓/upisan/ne). **`ep_merge` VEĆ kešira** system+examples; `ep_cleanup`/`ep_extract_naredba` NE (moguće proširenje „B"). Sonnet 4.6 min prefiks 2048 tok — ako toast stalno kaže „keš: ne", prefiks je premali.
+5. **Fix skakanja teksta:** CSS `field-sizing: content` (`@supports`), JS `autoGrow` je no-op na modernom WebView (`NATIVE_AUTOGROW`), fallback ostaje za stare.
+6. **Uviđaj — „📍 Početak uviđaja":** ubaci na VRH rečenicu „Uviđaj dana <dan u sedmici>, DD.MM.YYYY. godine u HH:MM sati na adresi <adresa>." Adresa preko NATIVNOG Android Geocoder-a (`AndroidBridge.reverseGeocode` most). Fallback: koordinate uz upozorenje. Dozvole: FINE/COARSE_LOCATION + `setGeolocationEnabled(true)` + `onGeolocationPermissionsShowPrompt`.
+7. **„📤 Generiši i podijeli (OneDrive…)":** share sheet (`AndroidBridge.shareDocx`, cache/share FileProvider) — **jedini pouzdan put do OneDrive-a** (OneDrive NE podržava SAF „Create document", zato se u SAF biraču vidi samo Drive; SAF varijanta UKLONJENA). „Generiši (.docx)" = direktno u Download.
+8. **Povrede (multi sekcije):** ↑/↓ strelice za redoslijed stavki (`moveItem`); „➕ Nova" ubacuje ISPOD selektovane (`addItem(sid, afterIdx)`); uklonjeno duplo inline „+ Dodaj" dugme (samo „➕ Nova" u donjoj traci).
+9. **Pregled je default:** stavka/sekcija sa finalnim tekstom otvara tab „Finalno" (`showFinal`/`itemShowFinal`); „Diktat" samo kad finalnog nema; mikrofon auto-prebaci na „Diktat" pri snimanju.
+
+## OTVORENO / sljedeći koraci (nije rađeno)
+- **STT:** za BESPLATNO + BHS Groq Whisper large-v3 je već najbolje; **ElevenLabs Scribe** je tačniji (WER ~3,1% hr) i ima „keyterm prompting" ali PLAĆENO (~$0,22/h). Ponuđeno: dodati Scribe kao OPCIONI provider (Groq default/fallback) — čeka odluku.
+- **Prompt caching „B":** dodati `cache_control` i na `ep_cleanup`/`ep_extract_naredba` (ako mjerenje pokaže da se isplati).
+- Iz ranijeg istraživanja (nije birano): brze fraze/makroi, UI za rječnik korekcija, **dijagram tijela za povrede**, pregled cijelog nalaza.
+- **v1 keystore** popraviti trajno (uz jednu deinstalaciju) — samo ako zatreba updatovati v1.
+
+## Alati/validacija (BEZ Android SDK/keytool/java lokalno → build SAMO na CI)
+- **JS sintaksa:** esprima nad kopijom uz `catch {`→`catch(e){` i `?.`→`.` (desktop venv `C:\Users\User\OneDrive\AI\Print Apk\diktafon-obdukcija\.venv\Scripts\python.exe`, `pip install esprima`).
+- **SVG:** cairosvg (fitz vara fill-rule). **CSS:** brojanje `{`/`}`. **XML:** `xml.dom.minidom`.
+- **Python test:** venv + env `DIKTAFON_APP_DIR=...\assets\pydata`, `DIKTAFON_DATA_DIR=<temp>` → `import android_api; android_api.dispatch(...)`.
+- **Commit identitet:** `git -c user.email="diktafon@local" -c user.name="Diktafon Build"`.
+- **Build poll:** token iz `git credential fill` (host github.com) → GitHub Actions API `runs?branch=v2`.
+- `CLAUDE_MODEL = "claude-sonnet-4-6"`.
+
+---
 
 ## 1. Šta je ovo
 Native Android aplikacija (Samsung Galaxy S25 Ultra) za diktiranje obdukcionog
