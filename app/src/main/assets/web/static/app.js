@@ -2451,9 +2451,9 @@ function showTextModal(title, text) {
 }
 
 // === Generate ===
-// saveAs=false → direktno u Download; saveAs=true → sistemski birač lokacije
-// (SAF: lokalni folderi, OneDrive, Drive...) preko AndroidBridge.saveDocxAs.
-async function generateReport(saveAs) {
+// share=false → direktno u Download; share=true → share sheet (OneDrive, mail, Viber…).
+// Share je jedini pouzdan put do OneDrive-a — njegova app ne podržava SAF kreiranje.
+async function generateReport(share) {
   // Provjeri da li su ime i KT broj popunjeni — bez njih filename će biti "Zapisnik.docx"
   const ime = (STATE.header.ime_prezime || "").trim();
   const kt = (STATE.header.kt_broj || "").trim();
@@ -2505,9 +2505,9 @@ async function generateReport(saveAs) {
     const res = await nativeCall("generate", { header: STATE.header, sections: flatSections });
     if (res && res.__error) throw new Error(res.detail || ("status " + res.status));
     const filename = res.filename || "zapisnik.docx";
-    if (saveAs && window.AndroidBridge && typeof AndroidBridge.saveDocxAs === "function") {
-      AndroidBridge.saveDocxAs(filename, res.docx_b64);
-      toast("Izaberi gdje snimiti (OneDrive, folder…)", "success");
+    if (share && window.AndroidBridge && typeof AndroidBridge.shareDocx === "function") {
+      AndroidBridge.shareDocx(filename, res.docx_b64);
+      toast("Izaberi aplikaciju (OneDrive, mail…)", "success");
     } else {
       window.AndroidBridge.saveDocx(filename, res.docx_b64);
       toast("Zapisnik snimljen u Download ✓", "success");
@@ -2956,8 +2956,8 @@ async function init() {
   $("#btn-new-draft").addEventListener("click", newDraft);
   $("#btn-clear").addEventListener("click", clearCurrent);
   $("#btn-generate").addEventListener("click", () => generateReport(false));
-  const mGenAs = $("#menu-generate-as");
-  if (mGenAs) mGenAs.addEventListener("click", () => {
+  const mShareGen = $("#menu-share-gen");
+  if (mShareGen) mShareGen.addEventListener("click", () => {
     const menu2 = $("#topbar-menu");
     if (menu2) menu2.classList.remove("show");
     generateReport(true);

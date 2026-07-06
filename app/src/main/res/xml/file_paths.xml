@@ -2,4 +2,6 @@
 <paths>
     <!-- Privremena slika naredbe koju kamera snimi (app-private cache). -->
     <cache-path name="camera" path="camera/" />
+    <!-- Privremeni .docx za "Generiši i podijeli" (OneDrive/mail preko share sheet-a) -->
+    <cache-path name="share" path="share/" />
 </paths>

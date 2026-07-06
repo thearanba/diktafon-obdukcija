@@ -48,7 +48,6 @@ class MainActivity : AppCompatActivity() {
         const val MENU_RELOAD = 2
         const val REQ_AUDIO = 100
         const val REQ_FILE = 200
-        const val REQ_SAVE_AS = 300
         const val BASE_URL = "https://appassets.androidplatform.net/index.html"
     }
 
@@ -58,9 +57,6 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var pyApi: PyObject? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
-    // „Generiši u…" (SAF picker): bytes čekaju dok korisnik bira lokaciju (i OneDrive)
-    private var pendingSaveBytes: ByteArray? = null
-    private var pendingSaveName: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -206,23 +202,6 @@ class MainActivity : AppCompatActivity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_SAVE_AS) {
-            val bytes = pendingSaveBytes
-            pendingSaveBytes = null
-            val uri = data?.data
-            if (resultCode == Activity.RESULT_OK && uri != null && bytes != null) {
-                try {
-                    contentResolver.openOutputStream(uri, "wt").use { it!!.write(bytes) }
-                    Toast.makeText(this, "Snimljeno: $pendingSaveName", Toast.LENGTH_LONG).show()
-                    openDocx(uri,
-                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                } catch (e: Exception) {
-                    Log.e(TAG, "SaveAs upis: ${e.message}", e)
-                    Toast.makeText(this, "Greška snimanja: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-            return
-        }
         if (requestCode == REQ_FILE) {
             val cb = filePathCallback
             filePathCallback = null
@@ -243,8 +222,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun bootstrapPython(anthropic: String, groq: String) {
         try {
-            // Privatnost: fotografije naredbi iz ranijih sesija ne trebaju ležati u kešu
+            // Privatnost: fotografije naredbi i podijeljeni .docx iz ranijih sesija
+            // ne trebaju ležati u kešu (share fajl je do sada već poslan)
             try { File(cacheDir, "camera").deleteRecursively() } catch (_: Exception) {}
+            try { File(cacheDir, "share").deleteRecursively() } catch (_: Exception) {}
 
             val appDir = File(filesDir, "app")
             val dataDir = File(filesDir, "data")
@@ -385,28 +366,35 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        /** „Generiši u…": sistemski birač lokacije (SAF) — uključuje OneDrive, Drive,
-         *  lokalne foldere... Bytes čekaju u pendingSaveBytes do izbora u onActivityResult. */
+        /** „Generiši i podijeli": share sheet — jedini pouzdan put do OneDrive-a
+         *  (OneDrive NE podržava SAF kreiranje pa se ne pojavljuje u „Generiši u…").
+         *  Fajl ide u cache/share preko FileProvider-a; pri startu se keš čisti. */
         @JavascriptInterface
-        fun saveDocxAs(filename: String, base64Data: String) {
+        fun shareDocx(filename: String, base64Data: String) {
             try {
-                pendingSaveBytes = Base64.decode(base64Data, Base64.DEFAULT)
-                pendingSaveName = if (filename.endsWith(".docx")) filename else "$filename.docx"
+                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                val safeName = if (filename.endsWith(".docx")) filename else "$filename.docx"
+                val dir = File(cacheDir, "share").apply { mkdirs() }
+                val f = File(dir, safeName)
+                f.writeBytes(bytes)
+                val uri = FileProvider.getUriForFile(
+                    this@MainActivity, "$packageName.fileprovider", f)
+                val mime =
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = mime
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, safeName)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
                 runOnUiThread {
-                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type =
-                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        putExtra(Intent.EXTRA_TITLE, pendingSaveName)
-                    }
-                    startActivityForResult(intent, REQ_SAVE_AS)
+                    startActivity(Intent.createChooser(send, "Podijeli zapisnik"))
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "saveDocxAs greška: ${e.message}", e)
-                pendingSaveBytes = null
+                Log.e(TAG, "shareDocx greška: ${e.message}", e)
                 runOnUiThread {
                     Toast.makeText(this@MainActivity,
-                        "Greška: ${e.message}", Toast.LENGTH_LONG).show()
+                        "Greška dijeljenja: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
