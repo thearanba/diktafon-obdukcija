@@ -6,6 +6,30 @@
 
 ---
 
+# 🟢 GRANA `nermin` — Diktafon Nermin (zasebna app, dodano 08.07.2026)
+
+**Treća aplikacija** pored v1/v2 — verzija za **prof. dr. Nermina Sarajlića**. Grananje od `v2`.
+- **Grana:** `nermin` · **applicationId:** `ba.forenzika.diktafon.nermin` · **app ime:** „Diktafon Nermin" ·
+  **workflow:** `build-nermin.yml` (trigger grana `nermin`) · **release tag:** `nermin` (prerelease=true) →
+  `releases/tag/nermin` → „Diktafon Nermin.apk". Instalira se PORED v1/v2 (drugi applicationId).
+- **Keystore:** naslijeđen iz v2 (`keystore/debug.keystore` u repou) — isti potpis, instalacija preko postojeće.
+- **Razlika prema v2 = SAMO Nerminov template + identitet** (sve ostalo naslijeđeno iz v2):
+  1. **Template** `assets/pydata/template/Zapisnik opste Obdukcija.docx`: `header2.xml` presađen iz Nerminovog
+     originala (memorandum **Clarendon** bold-italic „STALNI SUDSKI VJEŠTAK / Prof.dr.sc. Nermin Sarajlić /
+     Specijalista" + desno Mob/Fax/E-mail + 2 dekorativne linije, self-contained DrawingML bez media); potpis-blok
+     → „Vještak / Prof. dr. Nermin Sarajlić / Specijalista sudske medicine". **Layout IDENTIČAN v2**
+     (margine, tabela 1951/3377/4703, font Georgia, footer, SVA generatorska sidra, default medicinski tekstovi) —
+     samo memorandum+potpis presađeni. Verifikovano: KORAK 0 sidra prolaze + Word render vjeran Nerminovom.
+  2. **Kod:** `docx_generator.py` obducent-ćelija → „Prof. dr. Nermin Sarajlić" (Pomoćnik obducenta red ZADRŽAN po
+     odluci korisnika); `android_api.py` asistent-prompt (MERGE_SYSTEM_MULTI/SINGLE) → „prof. dr. Nermin Sarajlić".
+- **Kako graditi Nermin template iznova** (ako zatreba): skripta uzima Salih (v2) template kao bazu, zamijeni
+  `word/header2.xml` Nerminovim bytes + potpis-blok (čisti `w14:paraId`/`rsid` da ne kolidiraju). `examples.json`
+  NIJE dirano (standardni medicinski few-shot, isti stil).
+- **Git rad na `nermin`:** `git push origin HEAD:refs/heads/nermin`. Kao i v2 — doc-only izmjene sa `[skip ci]`.
+- **Nerminov original (referenca za template):** `OneDrive\Documents\Desktop\Karović Hasan - T09 0 KTA 0211142 26 - 1.docx`.
+
+---
+
 # ⭐ v2 — TRENUTNO AKTIVNO STANJE (čitati PRVO)
 
 ## Dvije zasebne aplikacije (v1 zamrznuta, v2 aktivna)
