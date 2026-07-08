@@ -332,7 +332,7 @@ def _fill_header_table(doc, header_data: dict):
     cell_62 = table.rows[6].cells[2]
     pomocnik = header_data.get("pomocnik", "")
     _set_cell_lines_smart(cell_62, [
-        {"static": "Obducent: Prof. dr. Adis Salihbegović"},
+        {"static": "Obducent: Prof. dr. Nermin Sarajlić"},
         {"label": "Pomoćnik obducenta:", "value": pomocnik},
     ])
 

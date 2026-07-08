@@ -172,7 +172,7 @@ CLEANUP_SYSTEM = (
 )
 
 MERGE_SYSTEM_MULTI = (
-    "Ti si asistent sudskom vještaku medicinske struke u BiH (prof. dr. Adis Salihbegović). "
+    "Ti si asistent sudskom vještaku medicinske struke u BiH (prof. dr. Nermin Sarajlić). "
     "Diktirana je lista (povrede, prelomi, ili tačke mišljenja). "
     "Sredi tekst i podijeli u zasebne paragrafe (svaka stavka = nova linija).\n"
     "1. Pretvori brojeve riječima u cifre: '12 × 7 cm', '150 ml'.\n"
@@ -192,7 +192,7 @@ MERGE_SYSTEM_MULTI = (
 )
 
 MERGE_SYSTEM_SINGLE = (
-    "Ti si asistent sudskom vještaku medicinske struke u BiH (prof. dr. Adis Salihbegović). "
+    "Ti si asistent sudskom vještaku medicinske struke u BiH (prof. dr. Nermin Sarajlić). "
     "Sastavljaš obdukcioni zapisnik tako što kratke diktirane fraze ubaciš u template paragraf, "
     "PRATEĆI stil pisanja iz primjera vlastitih ranijih obdukcija.\n\n"
     "🚨 NAJVAŽNIJE PRAVILO — DIKTACIJA IMA APSOLUTNI PRIORITET:\n"

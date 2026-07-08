@@ -9,13 +9,14 @@ android {
     compileSdk 34
 
     defaultConfig {
-        // v2 (redizajn) = ZASEBNA aplikacija — instalira se PORED stare (drugi applicationId).
-        // namespace ostaje isti (paket koda/R klase); samo instalacioni ID se razlikuje.
-        applicationId 'ba.forenzika.diktafon.v2'
+        // Nermin (verzija za prof. dr. Nermina Sarajlića) = ZASEBNA aplikacija — instalira
+        // se PORED v1/v2 (drugi applicationId). namespace ostaje isti (paket koda/R klase);
+        // samo instalacioni ID se razlikuje. Razlika prema v2 = Nerminov template + identitet.
+        applicationId 'ba.forenzika.diktafon.nermin'
         minSdk 29          // Android 10 — pojednostavljuje MediaStore (Downloads bez dozvole)
         targetSdk 34
         versionCode 1
-        versionName '2.0'
+        versionName '1.0'
 
         ndk {
             // S25 Ultra je arm64-v8a; x86_64 je za emulator

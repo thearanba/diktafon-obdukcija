@@ -1,0 +1,83 @@
+name: Build APK Nermin
+
+# Verzija za prof. dr. Nermina Sarajlića — ZASEBNA aplikacija (applicationId .nermin),
+# instalira se PORED v1/v2. Razlika prema v2 = Nerminov template (memorandum/header,
+# potpis) + identitet obducenta. Objavljuje se u zaseban Release tag `nermin`, pa
+# `latest` (v1) i tag `v2` ostaju netaknuti.
+on:
+  push:
+    branches: [ nermin ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python (Chaquopy buildPython)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      # TRAJAN potpis: keystore/debug.keystore je naslijeđen iz v2 grane (već u repou),
+      # pa se koristi postojeći → Nermin app se uvijek instalira PREKO postojeće, bez
+      # deinstalacije. (Isti keystore može potpisati bilo koji applicationId.)
+      # Fallback: ako ga ikad nema, generiši jednokratno i upiši na `nermin` [skip ci].
+      - name: Ensure committed debug keystore
+        run: |
+          if [ -f keystore/debug.keystore ]; then
+            echo "Keystore već u repou — koristim njega."
+          else
+            echo "Generišem stabilan keystore (jednokratno) i upisujem ga u repo..."
+            mkdir -p keystore
+            keytool -genkeypair -v -keystore keystore/debug.keystore \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Diktafon Nermin Debug, O=Forenzika, C=BA"
+            git config user.email "diktafon@local"
+            git config user.name "Diktafon Build"
+            git add -f keystore/debug.keystore
+            git commit -m "Stabilan debug keystore za nermin (jednokratno) [skip ci]"
+            git push origin HEAD:nermin
+          fi
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK to app name
+        run: cp app/build/outputs/apk/debug/app-debug.apk "Diktafon Nermin.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diktafon-nermin
+          path: "Diktafon Nermin.apk"
+          if-no-files-found: error
+
+      # Zaseban Release tag `nermin` — NE dira `latest` (v1) ni tag `v2`.
+      - name: Publish APK to 'nermin' Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nermin
+          name: Diktafon Nermin
+          prerelease: true   # da `releases/latest` ostane v1, a Nermin zaseban
+          body: "Verzija za prof. dr. Nermina Sarajlića (Nerminov template/identitet). Zasebna aplikacija — instalira se pored v1/v2. Tapni 'Diktafon Nermin.apk' za instalaciju."
+          files: "Diktafon Nermin.apk"
