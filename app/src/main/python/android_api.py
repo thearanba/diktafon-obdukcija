@@ -168,7 +168,8 @@ CLEANUP_SYSTEM = (
     "4. NE dodaješ informacije. NE proširuješ opise.\n"
     "5. Ako poruka sadrži KONTEKST SLUČAJA (pol/dob), to su činjenice — uskladi rodne "
     "oblike i padeže s njima.\n"
-    "6. Vrati SAMO sređeni tekst, bez objašnjenja, bez navodnika."
+    "6. FORMAT ODGOVORA (OBAVEZNO): vrati sređeni tekst ISKLJUČIVO unutar oznaka "
+    "<izlaz> i </izlaz>, bez ijedne riječi objašnjenja, napomene ni navodnika izvan oznaka."
 )
 
 MERGE_SYSTEM_MULTI = (
@@ -187,8 +188,12 @@ MERGE_SYSTEM_MULTI = (
     "5. Stil — OPONAŠAJ primjere u redoslijedu opisa: tip povrede → lokacija → mjere → kvalitet ivica.\n"
     "6. Ako poruka sadrži KONTEKST SLUČAJA (pol/dob), to su činjenice — uskladi rodne "
     "oblike i padeže s njima.\n"
-    "7. Vrati SAMO sređeni tekst, bez objašnjenja, bez navodnika, bez '1.', '2.' "
-    "(numeracija se dodaje automatski ako treba)."
+    "7. FORMAT ODGOVORA (OBAVEZNO): vrati sređene stavke (svaka u svom redu) ISKLJUČIVO "
+    "unutar oznaka <izlaz> i </izlaz>. Bez ijedne riječi objašnjenja, komentara, napomene, "
+    "markdown-a, navodnika, i bez '1.', '2.' numeracije (dodaje se automatski). Ništa "
+    "izvan oznaka.\n"
+    "Primjer: <izlaz>Oguljotina kože desne podlaktice, veličine 3 × 2 cm.\n"
+    "Krvni podljev lijevog nadlakta, ljubičaste boje.</izlaz>"
 )
 
 MERGE_SYSTEM_SINGLE = (
@@ -225,7 +230,14 @@ MERGE_SYSTEM_SINGLE = (
     "9. Ako poruka sadrži KONTEKST SLUČAJA (pol/dob), to su činjenice: 'muški/ženski' "
     "izbore u template-u razriješi prema polu, rodne oblike i padeže uskladi, a dob "
     "upiši gdje paragraf ima mjesto za nju ako nije diktirana.\n"
-    "10. Vrati SAMO popunjen paragraf, bez objašnjenja, bez markdown-a, bez navodnika."
+    "10. FORMAT ODGOVORA (OBAVEZNO): vrati gotov paragraf ISKLJUČIVO unutar oznaka "
+    "<izlaz> i </izlaz>. Unutar oznaka je SAMO čist tekst paragrafa — nijedna riječ "
+    "objašnjenja, komentara, napomene o tome šta nedostaje, markdown-a ni navodnika. "
+    "Ako neka vrijednost NIJE diktirana, zadrži prazno mjesto u rečenici "
+    "(npr. 'dužine oko  cm') i NE objašnjavaj to nigdje. Ništa se ne smije pisati "
+    "izvan oznaka.\n"
+    "Primjer ispravnog odgovora: <izlaz>Muški leš dužine oko  cm, u dobi od 54 godine, "
+    "bez odjeće.</izlaz>"
 )
 
 PROVJERA_SYSTEM = (
@@ -398,6 +410,23 @@ def ep_transcribe(payload):
     return {"text": corrected, "raw_whisper": raw_text}
 
 
+def _strip_output_tag(text: str, tag: str = "izlaz") -> str:
+    """Izvuci sadržaj iz <izlaz>...</izlaz> oznaka koje model MORA vratiti.
+    Deterministički odsijeca svaki preamble/postamble ('Pošto dužina nije
+    diktirana...', 'Evo teksta:', napomene) koji Claude zna dodati uz sam
+    paragraf — sve izvan oznaka se odbacuje. Fallback ako model zaboravi
+    oznake: uzmi sve iza otvarajuće, pa cijeli tekst."""
+    if not text:
+        return text
+    m = re.search(rf"<{tag}\s*>(.*?)</{tag}\s*>", text, re.S | re.I)
+    if m:
+        return m.group(1).strip()
+    m2 = re.search(rf"<{tag}\s*>(.*)$", text, re.S | re.I)
+    if m2:
+        return m2.group(1).strip()
+    return text.strip()
+
+
 def ep_cleanup(payload):
     if not ANTHROPIC_API_KEY:
         raise ApiError(400, "Anthropic API ključ nije postavljen.")
@@ -410,7 +439,7 @@ def ep_cleanup(payload):
         ANTHROPIC_API_KEY, CLAUDE_MODEL, CLEANUP_SYSTEM,
         [{"role": "user", "content": user_msg}], max_tokens=2000,
     )
-    cleaned = result["text"]
+    cleaned = _strip_output_tag(result["text"])
     if cleaned.startswith('"') and cleaned.endswith('"'):
         cleaned = cleaned[1:-1].strip()
     return {"text": cleaned}
@@ -469,7 +498,7 @@ def ep_merge(payload):
         ANTHROPIC_API_KEY, CLAUDE_MODEL, system_blocks,
         [{"role": "user", "content": user_content}], max_tokens=2000,
     )
-    merged = result["text"]
+    merged = _strip_output_tag(result["text"])
     if merged.startswith('"') and merged.endswith('"'):
         merged = merged[1:-1].strip()
     u = result["usage"]
