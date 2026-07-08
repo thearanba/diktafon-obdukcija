@@ -1186,6 +1186,82 @@ function autoGrowIn(el) {
   el.querySelectorAll("textarea").forEach(autoGrow);
 }
 
+// === Caret iznad tastature (fokus-kokpit / overlay) ===
+// windowSoftInputMode=adjustResize smanji WebView kad tastatura izađe, ALI ugrađeni
+// auto-scroll ka fokusu ne radi unutar position:fixed nested scroll-a (.card.fullscreen).
+// Zato: izmjerimo Y caret-a u textarea (mirror-div) i skrolujemo kontejner da caret
+// ostane između sticky headera i donje fokus-trake (koja u „Diktat" modu drži mikrofon).
+function caretYInTextarea(ta) {
+  const cs = getComputedStyle(ta);
+  const div = document.createElement("div");
+  const s = div.style;
+  s.position = "absolute"; s.visibility = "hidden";
+  s.top = "0"; s.left = "-9999px";
+  s.whiteSpace = "pre-wrap"; s.wordWrap = "break-word"; s.overflowWrap = "break-word";
+  s.boxSizing = "content-box";
+  s.width = cs.width;  // content-box širina → isti prelom redova kao textarea
+  ["paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+    "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing",
+    "lineHeight", "textTransform", "wordSpacing", "textIndent", "tabSize"
+  ].forEach(p => { s[p] = cs[p]; });
+  const pos = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
+  div.textContent = ta.value.substring(0, pos);
+  const span = document.createElement("span");
+  span.textContent = ta.value.substring(pos) || ".";  // marker (barem 1 znak)
+  div.appendChild(span);
+  document.body.appendChild(div);
+  const y = span.offsetTop;  // px od vrha textarea (uključ. paddingTop)
+  document.body.removeChild(div);
+  return y;
+}
+
+function ensureCaretVisible() {
+  const ta = document.activeElement;
+  if (!ta || ta.tagName !== "TEXTAREA") return;
+  const sc = ta.closest(".card.fullscreen, .fs-overlay");
+  if (!sc) return;  // samo u kokpitu/overlay-u ima smisla
+  const vv = window.visualViewport;
+  const viewTop = vv ? vv.offsetTop : 0;
+  const viewH = vv ? vv.height : window.innerHeight;
+  // sticky header sekcije prekriva vrh
+  const hdr = sc.querySelector(".card-header-row, .fs-overlay-header");
+  const hdrH = (hdr && hdr.offsetHeight) ? hdr.offsetHeight : 0;
+  // donja fokus-traka (mikrofon/Spoji) prekriva dno — izraženije u „Diktat" modu
+  const nav = document.querySelector(".focus-nav.show");
+  const navH = (nav && getComputedStyle(nav).display !== "none") ? nav.offsetHeight : 0;
+  const caretScreenY = ta.getBoundingClientRect().top + caretYInTextarea(ta);
+  const margin = 24;
+  const topLimit = viewTop + hdrH + margin;
+  const botLimit = viewTop + viewH - navH - margin;
+  if (caretScreenY > botLimit) {
+    sc.scrollTop += (caretScreenY - botLimit);
+  } else if (caretScreenY < topLimit) {
+    sc.scrollTop -= (topLimit - caretScreenY);
+  }
+}
+
+let _caretTimer = 0;
+function scheduleCaretVisible(delay = 0) {
+  clearTimeout(_caretTimer);
+  _caretTimer = setTimeout(ensureCaretVisible, delay);
+}
+
+// Selekcija/pomjeranje caret-a (dok je textarea fokusiran)
+document.addEventListener("selectionchange", () => {
+  const ae = document.activeElement;
+  if (ae && ae.tagName === "TEXTAREA") scheduleCaretVisible(0);
+});
+// Fokus na polje → tastatura tek izlazi; sačekaj resize pa poravnaj
+document.addEventListener("focusin", e => {
+  if (e.target && e.target.tagName === "TEXTAREA") scheduleCaretVisible(150);
+});
+// Tastatura mijenja visinu vidljivog dijela (adjustResize)
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", () => scheduleCaretVisible(60));
+  window.visualViewport.addEventListener("scroll", () => scheduleCaretVisible(60));
+}
+
 function renderSections() {
   if (typeof exitFocus === "function") exitFocus();  // resetuj fokus pri punom renderu
   const container = $("#sections-container");
