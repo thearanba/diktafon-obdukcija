@@ -48,23 +48,29 @@
     <div class="card-body" id="header-body"></div>
   </section>
 
-  <!-- Okolnosti slučaja / Uviđaj — kartica na home (bila fullscreen tab) -->
+  <!-- Okolnosti slučaja / Uviđaj — kartica na home; klik OTVARA u fullscreen -->
   <section class="card collapsible" id="okolnosti-card">
-    <button class="card-header" data-toggle>
-      <span class="caret">▸</span>
-      <span class="card-title" id="okolnosti-card-title">Okolnosti slučaja</span>
-      <span class="card-meta" id="okolnosti-card-meta"></span>
-    </button>
+    <div class="card-header-row">
+      <button class="card-header" data-fs-card="okolnosti-card">
+        <span class="section-idx"></span>
+        <span class="card-title" id="okolnosti-card-title">Okolnosti slučaja</span>
+        <span class="card-meta" id="okolnosti-card-meta"></span>
+      </button>
+      <button class="btn-focus" data-fs-close title="Zatvori" aria-label="Zatvori">✕</button>
+    </div>
     <div class="card-body" id="okolnosti-card-body"></div>
   </section>
 
-  <!-- Izuzeti uzorci — kartica na home (bila fullscreen tab) -->
+  <!-- Izuzeti uzorci — kartica na home; klik OTVARA u fullscreen -->
   <section class="card collapsible" id="izuzeti-card">
-    <button class="card-header" data-toggle>
-      <span class="caret">▸</span>
-      <span class="card-title">Izuzeti uzorci</span>
-      <span class="card-meta" id="izuzeti-card-meta"></span>
-    </button>
+    <div class="card-header-row">
+      <button class="card-header" data-fs-card="izuzeti-card">
+        <span class="section-idx"></span>
+        <span class="card-title">Izuzeti uzorci</span>
+        <span class="card-meta" id="izuzeti-card-meta"></span>
+      </button>
+      <button class="btn-focus" data-fs-close title="Zatvori" aria-label="Zatvori">✕</button>
+    </div>
     <div class="card-body" id="izuzeti-card-body"></div>
   </section>
 

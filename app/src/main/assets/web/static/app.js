@@ -1418,10 +1418,7 @@ function renderSections() {
       <div class="card-header-row">
         <button class="card-header" data-toggle>
           <span class="section-idx">${escapeHtml(idx)}</span>
-          <span class="section-head">
-            <span class="card-title">${escapeHtml(ttl)}</span>
-            <span class="card-summary"></span>
-          </span>
+          <span class="card-title">${escapeHtml(ttl)}</span>
         </button>
         <span class="section-status"></span>
         <button class="btn-focus" data-focus title="Cijeli ekran" aria-label="Cijeli ekran">⛶</button>
@@ -1755,8 +1752,6 @@ function updateSectionStatus(sectionId) {
   if (hasFinal) { dot.textContent = "finalno"; dot.classList.add("cleaned"); }
   else if (hasRaw) { dot.textContent = "diktat"; dot.classList.add("dictated"); }
   else { dot.textContent = "prazno"; dot.classList.add("empty"); }
-  const sum = card.querySelector(".card-summary");
-  if (sum) sum.textContent = sectionSummary(sectionId);
 }
 
 // === Kontekst slučaja (pol, dob) za Claude merge/cleanup ===
@@ -1979,8 +1974,34 @@ window.onAndroidBack = function () {
   if (modalClose) { modalClose.click(); return true; }
   // 3) Fokus-kokpit (sekcija preko cijelog ekrana) → nazad na listu
   if (typeof STATE !== "undefined" && STATE.focusSectionId) { exitFocus(); return true; }
+  // 4) Okolnosti/Izuzeti kartica otvorena u fullscreen → nazad na listu
+  if (typeof STATE !== "undefined" && STATE.fsCardId) { exitCardFullscreen(); return true; }
   return false;
 };
+
+// === Okolnosti/Izuzeti kartice: otvaranje u FULLSCREEN (kao sekcije), izlaz ✕ ===
+function enterCardFullscreen(card) {
+  if (!card) return;
+  if (typeof exitFocus === "function") exitFocus();  // zatvori eventualni sekcijski fokus
+  document.querySelectorAll("#okolnosti-card.fullscreen, #izuzeti-card.fullscreen")
+    .forEach(c => c.classList.remove("fullscreen", "open"));
+  card.classList.add("fullscreen", "open");
+  document.body.classList.add("has-fullscreen");
+  STATE.fsCardId = card.id;
+  autoGrowIn(card);
+}
+function exitCardFullscreen() {
+  document.querySelectorAll("#okolnosti-card.fullscreen, #izuzeti-card.fullscreen")
+    .forEach(c => c.classList.remove("fullscreen", "open"));
+  document.body.classList.remove("has-fullscreen");
+  STATE.fsCardId = null;
+}
+document.addEventListener("click", e => {
+  const opener = e.target.closest("[data-fs-card]");
+  if (opener) { enterCardFullscreen(document.getElementById(opener.dataset.fsCard)); return; }
+  const closer = e.target.closest("[data-fs-close]");
+  if (closer) { exitCardFullscreen(); return; }
+});
 
 function focusGo(dir) {
   const ids = (STATE.config.sections || []).map(s => s.id);

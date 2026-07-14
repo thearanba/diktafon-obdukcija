@@ -442,7 +442,9 @@ html, body {
   display: flex;
   align-items: stretch;
 }
-.card-header-row .card-header { flex: 1; min-width: 0; padding-right: 44px; }
+.card-header-row .card-header { flex: 1; min-width: 0; padding-right: 84px; }
+/* Naslov skraćuje (…) prije statusnog pill-a — ne preklapaju se */
+.card-header-row .card-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn-focus {
   display: none;  /* u listi nije potreban — klik na sekciju otvara fokus */
   flex: 0 0 auto;
@@ -624,7 +626,8 @@ body.has-fullscreen { overflow: hidden; }
   color: var(--primary);
   align-self: center;
 }
-.section-idx:empty { width: 6px; }
+/* Pod-sekcije bez broja: prazna kolona ISTE širine kao broj → tekst poravnat s numerisanima */
+.section-idx:empty { width: 26px; }
 
 /* Status pill desno u kartici (finalno / diktat / prazno). Apsolutno pa ne gura red. */
 .section-status {
@@ -661,9 +664,10 @@ body.has-fullscreen { overflow: hidden; }
   border-color: var(--border);
 }
 
-/* Fokus-kokpit: čist header — broj/sažetak skriveni, naslov centriran (bez „dropdown" strelice) */
+/* Fokus-kokpit: čist header — broj/sažetak/meta skriveni, naslov centriran (bez „dropdown" strelice) */
 .card.fullscreen .section-idx,
-.card.fullscreen .card-summary { display: none; }
+.card.fullscreen .card-summary,
+.card.fullscreen .card-meta { display: none; }
 .card.fullscreen .card-title { text-align: center; width: 100%; }
 
 /* Naslov sekcije + sažetak (dva reda) */
