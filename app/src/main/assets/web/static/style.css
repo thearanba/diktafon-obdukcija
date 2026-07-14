@@ -631,6 +631,8 @@ body.has-fullscreen { overflow: hidden; }
   border: 1px solid transparent;
 }
 .section-status:empty { display: none; }
+/* U fokus-kokpitu (fullscreen) desno stoji ✕ za zatvaranje — badge bi se preklopio, pa ga skrivamo */
+.card.fullscreen .section-status { display: none; }
 .section-status.dictated {
   background: rgba(245, 134, 52, 0.14);
   color: var(--primary);
@@ -1490,7 +1492,8 @@ body.has-fullscreen .toast {
   /* Topbar — jedna kompaktna linija */
   .topbar { padding: 5px 8px; min-height: 38px; gap: 6px; }
   .topbar .title { font-size: 14px; }
-  #draft-name-indicator { font-size: 12px; max-width: 130px; }
+  /* bez max-width — puni tužilački broj koristi svu raspoloživu širinu trake (flex-grow) */
+  #draft-name-indicator { font-size: 12px; }
   .status { font-size: 10px; padding: 3px 7px; }
   .btn-menu { font-size: 20px; width: 32px; height: 32px; }
 
