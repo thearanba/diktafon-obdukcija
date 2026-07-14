@@ -40,11 +40,14 @@
   <div class="group-divider">Zaglavlje</div>
   <!-- Sekcija: Zaglavlje -->
   <section class="card collapsible" id="header-card">
-    <button class="card-header" data-toggle>
-      <span class="caret">▸</span>
-      <span class="card-title">Zaglavlje predmeta</span>
-      <span class="card-meta" id="header-summary"></span>
-    </button>
+    <div class="card-header-row">
+      <button class="card-header" data-fs-card="header-card">
+        <span class="section-idx"></span>
+        <span class="card-title"><span class="ct-main">Zaglavlje predmeta</span></span>
+        <span class="card-meta" id="header-summary"></span>
+      </button>
+      <button class="btn-focus" data-fs-close title="Zatvori" aria-label="Zatvori">✕</button>
+    </div>
     <div class="card-body" id="header-body"></div>
   </section>
 
