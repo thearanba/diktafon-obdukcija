@@ -1,19 +1,21 @@
 /* Reset i osnovno */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  /* Identitet Katedre za sudsku medicinu (dfm): ugljeno-crna + koščano-bijela,
-     amber kao suzdržan akcenat (#E08A1E). Vidi vizitku/memorandum. */
-  --bg: #211d1e;
+  /* Forensic Medicine Design System (Katedra za sudsku medicinu), tamna varijanta:
+     ink-900 podloga + charcoal band + koščano-bijela + zvanični brend-orange (val). */
+  --bg: #201d1e;            /* ink-900 (full-bleed) */
   --surface: #2a2627;
-  --surface-2: #383331;
+  --surface-2: #332e2d;
   --border: #45403e;
-  --text: #efe9e1;
+  --band: #373435;          /* charcoal chrome band (topbar) */
+  --text: #efe9e1;          /* koščano-bijela */
   --text-dim: #9a948c;
-  --primary: #E08A1E;       /* amber — akcenat */
-  --primary-h: #c9791a;
+  --primary: #f58634;       /* zvanični brend-orange (narandžasti val) */
+  --primary-h: #e8722a;     /* orange-600 (hover) */
+  --primary-strong: #f24d20;/* orange-strong (press) */
   --success: #1d9e75;
   --danger: #cf3a3a;
-  --warn: #E08A1E;
+  --warn: #f58634;
   --record: #cf3a3a;
   --mic-amp: 0;   /* živi nivo zvuka (0..1) — JS ga osvježava dok snima */
 }
@@ -31,13 +33,16 @@ html, body {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--surface);
+  background: var(--band);           /* charcoal chrome band */
   padding: 6px 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  /* narandžasti val (potpis DS-a) umjesto obične linije */
+  border-width: 0 0 2px;
+  border-style: solid;
+  border-image: linear-gradient(90deg, var(--primary), var(--primary-strong)) 1;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.4);
   min-height: 40px;
   gap: 8px;
 }
@@ -232,7 +237,7 @@ html, body {
 }
 .draft-row.current {
   border-color: var(--primary);
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(245, 134, 52, 0.08);
 }
 .draft-info { flex: 1; min-width: 0; }
 .draft-name {
@@ -391,6 +396,7 @@ html, body {
   overflow: hidden;
   border: 1px solid var(--border);
   scroll-margin-top: 52px;  /* da otvorena sekcija ne zađe pod sticky traku */
+  position: relative;       /* sidro za apsolutni status-badge */
 }
 .card-header {
   width: 100%;
@@ -429,12 +435,14 @@ html, body {
 }
 .collapsible.open .card-body { display: block; }
 
-/* Zaglavlje sekcije: naslov (toggle) + ⛶ ikona desno, u istoj liniji */
+/* Zaglavlje sekcije: naslov (toggle) + ⛶ ikona desno, u istoj liniji.
+   Status-badge je apsolutno pozicioniran (vidi .section-status) — ne učestvuje
+   u flex-u pa ne može gurnuti red niti biti klipovan; padding-right ostavlja mu mjesto. */
 .card-header-row {
   display: flex;
   align-items: stretch;
 }
-.card-header-row .card-header { flex: 1; min-width: 0; }
+.card-header-row .card-header { flex: 1; min-width: 0; padding-right: 44px; }
 .btn-focus {
   display: none;  /* u listi nije potreban — klik na sekciju otvara fokus */
   flex: 0 0 auto;
@@ -606,20 +614,72 @@ body.has-fullscreen { overflow: hidden; }
 .focus-act:active, .focus-side:active, .focus-mic:active { transform: scale(0.95); }
 
 /* Status oznake u headerima sekcija */
+/* Status badge: S (spojeno) / D (diktat); prazno = skriven. Apsolutno u ćošku kartice. */
 .section-status {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
+  position: absolute;
+  top: 16px;
+  right: 14px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--surface-2);
-  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
 }
-.section-status.dictated { background: var(--primary); }
-.section-status.cleaned { background: var(--success); }
+.section-status:empty { display: none; }
+.section-status.dictated {
+  background: rgba(245, 134, 52, 0.14);
+  color: var(--primary);
+  border-color: rgba(245, 134, 52, 0.42);
+}
+.section-status.cleaned {
+  background: rgba(29, 158, 117, 0.16);
+  color: #54c69e;
+  border-color: rgba(29, 158, 117, 0.42);
+}
+
+/* Naslov sekcije + sažetak (dva reda) */
+.section-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.section-head .card-title {
+  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-summary {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-summary:empty { display: none; }
+
+/* Grupni razdjelnici u listi sekcija (Spoljašnji / Unutrašnji / Mišljenje) */
+.group-divider {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 20px 4px 8px;
+}
+#sections-container > .group-divider:first-child { padding-top: 8px; }
 
 /* Auto-popuni iz naredbe */
 .extract-naredba-box {
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(245, 134, 52, 0.08);
   border: 1px dashed var(--primary);
   border-radius: 10px;
   padding: 14px;
@@ -702,9 +762,9 @@ body.has-fullscreen { overflow: hidden; }
 }
 .izuzeti-chk input { display: none; }
 .izuzeti-chk:has(input:checked) {
-  background: rgba(59, 130, 246, 0.2);
+  background: rgba(245, 134, 52, 0.2);
   border-color: var(--primary);
-  color: #93c5fd;
+  color: var(--text);
   font-weight: 600;
 }
 .izuzeti-manual {
@@ -986,12 +1046,12 @@ body.has-fullscreen { overflow: hidden; }
 /* Selektovana (aktivna) stavka — donja traka radi nad njom */
 .item-card.selected {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
-  background: #182a47;
+  box-shadow: 0 0 0 2px rgba(245, 134, 52, 0.45);
+  background: rgba(245, 134, 52, 0.10);   /* suzdržan orange wash umjesto plave ispune */
 }
 .item-card.selected .item-num::after {
   content: " ● aktivna";
-  color: #93c5fd;
+  color: var(--primary);
   font-weight: 700;
 }
 
@@ -1051,7 +1111,7 @@ body.has-fullscreen { overflow: hidden; }
   font-size: 14px;
 }
 .item-card .dict-textarea.raw {
-  background: #1a2436;
+  background: #262122;
   margin-bottom: 8px;
 }
 .item-card .dict-textarea.final {
@@ -1081,7 +1141,7 @@ body.has-fullscreen { overflow: hidden; }
   cursor: pointer;
 }
 .btn-add-item:hover {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(245, 134, 52, 0.1);
   border-color: var(--primary);
 }
 

@@ -1262,11 +1262,48 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener("scroll", () => scheduleCaretVisible(60));
 }
 
+// Grupe sekcija (razdjelnici u listi) — prate strukturu zapisnika.
+const SECTION_GROUP = {
+  s1_opsti: "spolj", s1_konstitucija: "spolj", s2_glava_lice: "spolj",
+  s2_usta: "spolj", s2_zubi_vrat_grudi: "spolj", s3_povrede: "spolj", s4_otvori: "spolj",
+  s5_mozak: "unut", s6_jezik: "unut", s7_pluca: "unut", s8_srce: "unut",
+  s9_trbuh: "unut", s10_git: "unut", s11_kostur: "unut", dodatne: "unut",
+  misljenje: "misljenje",
+};
+const GROUP_LABEL = {
+  spolj: "I — Spoljašnji nalaz",
+  unut: "II — Unutrašnji nalaz",
+  misljenje: "Mišljenje",
+};
+
+// Kratak izvod sadržaja ispod naslova sekcije (u listi).
+function sectionSummary(sid) {
+  const def = getSectionDef(sid);
+  const sec = getSection(sid);
+  if (def && def.multi && sec.items) {
+    const n = sec.items.filter(it => (it.final || it.raw || "").trim()).length;
+    return n > 0 ? `${n} ${n === 1 ? "unos" : "unosa"}` : "";
+  }
+  const src = ((sec.final || "").trim()) || ((sec.raw || "").trim());
+  if (!src) return "";
+  const clean = src.replace(/\s+/g, " ");
+  return clean.length > 54 ? clean.slice(0, 54) + "…" : clean;
+}
+
 function renderSections() {
   if (typeof exitFocus === "function") exitFocus();  // resetuj fokus pri punom renderu
   const container = $("#sections-container");
   container.innerHTML = "";
+  let lastGroup = null;
   for (const s of STATE.config.sections) {
+    const grp = SECTION_GROUP[s.id];
+    if (grp && grp !== lastGroup) {
+      const div = document.createElement("div");
+      div.className = "group-divider";
+      div.textContent = GROUP_LABEL[grp] || "";
+      container.appendChild(div);
+      lastGroup = grp;
+    }
     const card = document.createElement("section");
     card.className = "card collapsible";
     card.dataset.sectionId = s.id;
@@ -1275,9 +1312,12 @@ function renderSections() {
       <div class="card-header-row">
         <button class="card-header" data-toggle>
           <span class="caret">▸</span>
-          <span class="section-status"></span>
-          <span class="card-title">${escapeHtml(s.title)}</span>
+          <span class="section-head">
+            <span class="card-title">${escapeHtml(s.title)}</span>
+            <span class="card-summary"></span>
+          </span>
         </button>
+        <span class="section-status"></span>
         <button class="btn-focus" data-focus title="Cijeli ekran" aria-label="Cijeli ekran">⛶</button>
       </div>
     `;
@@ -1604,8 +1644,13 @@ function updateSectionStatus(sectionId) {
     hasRaw = (sec.raw || "").trim().length > 0;
     hasFinal = (sec.final || "").trim().length > 0;
   }
+  // Marker: "S" (spojeno — ima finalni) / "D" (diktat — samo sirovi) / prazno (skriven)
   dot.classList.toggle("dictated", hasRaw && !hasFinal);
   dot.classList.toggle("cleaned", hasFinal);
+  dot.textContent = hasFinal ? "S" : (hasRaw ? "D" : "");
+  dot.title = hasFinal ? "Spojeno" : (hasRaw ? "Diktat (nespojeno)" : "");
+  const sum = card.querySelector(".card-summary");
+  if (sum) sum.textContent = sectionSummary(sectionId);
 }
 
 // === Kontekst slučaja (pol, dob) za Claude merge/cleanup ===
