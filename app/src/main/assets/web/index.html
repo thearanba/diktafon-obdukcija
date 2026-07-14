@@ -53,7 +53,7 @@
     <div class="card-header-row">
       <button class="card-header" data-fs-card="okolnosti-card">
         <span class="section-idx"></span>
-        <span class="card-title" id="okolnosti-card-title">Okolnosti slučaja</span>
+        <span class="card-title"><span class="ct-main" id="okolnosti-card-title">Okolnosti slučaja</span></span>
         <span class="card-meta" id="okolnosti-card-meta"></span>
       </button>
       <button class="btn-focus" data-fs-close title="Zatvori" aria-label="Zatvori">✕</button>
@@ -66,7 +66,7 @@
     <div class="card-header-row">
       <button class="card-header" data-fs-card="izuzeti-card">
         <span class="section-idx"></span>
-        <span class="card-title">Izuzeti uzorci</span>
+        <span class="card-title"><span class="ct-main">Izuzeti uzorci</span></span>
         <span class="card-meta" id="izuzeti-card-meta"></span>
       </button>
       <button class="btn-focus" data-fs-close title="Zatvori" aria-label="Zatvori">✕</button>
@@ -91,6 +91,18 @@
     <button id="focus-clear" class="focus-act danger">✕ Obriši</button>
     <button id="focus-mic" class="focus-mic">🎤</button>
     <button id="focus-merge" class="focus-act primary">🪄 Spoji</button>
+  </div>
+</div>
+
+<!-- Donja traka za Okolnosti/Izuzeti u fullscreen (ista kao sekcijska) -->
+<div id="card-fs-nav" class="focus-nav">
+  <div class="focus-row focus-prevnext">
+    <button id="cardfs-prev" class="focus-side">←</button>
+    <button id="cardfs-next" class="focus-side">→</button>
+  </div>
+  <div class="focus-row focus-actions">
+    <button id="cardfs-mic" class="focus-mic">🎤</button>
+    <button id="cardfs-act" class="focus-act primary">✨ Doradi</button>
   </div>
 </div>
 

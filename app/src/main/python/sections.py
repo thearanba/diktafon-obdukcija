@@ -78,7 +78,7 @@ DICTATION_SECTIONS = [
     },
     {
         "id": "s3_povrede",
-        "title": "3. Vidljive povrede (više paragrafa)",
+        "title": "3. Povrede",
         "para_idx": 9,
         "expect": '3.',
         "default": "",
@@ -101,7 +101,7 @@ DICTATION_SECTIONS = [
     },
     {
         "id": "s6_jezik",
-        "title": "6. Jezik, ždrijelo, štitnjača",
+        "title": "6. Vrat",
         "para_idx": 15,
         "expect": '6.',
         "default": "Jezik odgovarajuće velik, jasne građe i crteža, sivkasto ružičast. Limfni čvorići korijena jezika srednje veličine, pokretni. U ždrijelu i jednjaku , njihova sluznica glatka, sjajna, svijetlo crvene boje. U grkljanu, dušniku i glavnim dušnicama , njihova sluznica glatka, sjajna. Limfni čvorići ispod račve dušnika pojedinačni, modrikasti, veličine zrna graška. Štitnjače srednje velike, smeđkaste.",
@@ -115,7 +115,7 @@ DICTATION_SECTIONS = [
     },
     {
         "id": "s8_srce",
-        "title": "8. Srce i osrčje",
+        "title": "8. Srce i aorta",
         "para_idx": 17,
         "expect": '8.',
         "default": "U srčanoj kesi oko ml bistrog, žućkastog sadržaja. Vanjski i unutrašnji list osrčja glatki, sjajni. Srce slobodno, srednje veliko, čvrsto. Srčana arterijska i venska ušća, njihovi zalisci. Osrčnica i usrčnica glatke, sjajne. Srčani mišić jasne građe i crteža, srednje debljine, srednjekrvan. Desna komora srednje debela, a lijeva debljine oko cm. Srčane arterije prohodne. Grudna aorta glatke, sjajne intime. Jajasta rupica u zidu između pretkomora zatvorena.",

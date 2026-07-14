@@ -927,12 +927,7 @@ function renderOkolnostiCard() {
   taWrap.className = "field";
   taWrap.innerHTML = `<textarea class="dict-textarea" id="okolnosti-fs-ta" data-header-id="okolnosti" placeholder="Opiši okolnosti / uviđaj…">${escapeHtml(STATE.header.okolnosti || "")}</textarea>`;
   body.appendChild(taWrap);
-  const bar = document.createElement("div");
-  bar.className = "okolnosti-actionbar";
-  bar.innerHTML = `
-    <button type="button" id="okolnosti-mic" class="btn-mic">🎤 Diktiraj</button>
-    <button type="button" id="okolnosti-cleanup" class="btn-cleanup">✨ Doradi (Claude)</button>`;
-  body.appendChild(bar);
+  // Diktiraj/Doradi su sada u donjoj traci (#card-fs-nav) — kao kod sekcija.
   bindOkolnostiCard(body);
   updateOkolnostiCardMeta();
 }
@@ -1917,6 +1912,8 @@ function shortTitle(t) {
 }
 
 function enterFocus(sid) {
+  // zatvori eventualnu Okolnosti/Izuzeti fullscreen karticu (i njenu donju traku)
+  if (typeof STATE !== "undefined" && STATE.fsCardId && typeof exitCardFullscreen === "function") exitCardFullscreen();
   // zatvori sve, otvori+fokusiraj ovu
   document.querySelectorAll(".card.collapsible.open").forEach(c => c.classList.remove("open"));
   document.querySelectorAll(".card.fullscreen").forEach(c => {
@@ -1992,6 +1989,8 @@ window.onAndroidBack = function () {
 };
 
 // === Okolnosti/Izuzeti kartice: otvaranje u FULLSCREEN (kao sekcije), izlaz ✕ ===
+const CARD_FS_ORDER = ["okolnosti-card", "izuzeti-card"];  // ←/→ navigacija između njih
+
 function enterCardFullscreen(card) {
   if (!card) return;
   if (typeof exitFocus === "function") exitFocus();  // zatvori eventualni sekcijski fokus
@@ -2001,19 +2000,70 @@ function enterCardFullscreen(card) {
   document.body.classList.add("has-fullscreen");
   STATE.fsCardId = card.id;
   autoGrowIn(card);
+  configCardFsNav(card.id);
+  const nav = document.getElementById("card-fs-nav");
+  if (nav) nav.classList.add("show");
+  card.scrollTop = 0;
 }
 function exitCardFullscreen() {
   document.querySelectorAll("#okolnosti-card.fullscreen, #izuzeti-card.fullscreen")
     .forEach(c => c.classList.remove("fullscreen", "open"));
   document.body.classList.remove("has-fullscreen");
   STATE.fsCardId = null;
+  const nav = document.getElementById("card-fs-nav");
+  if (nav) nav.classList.remove("show");
 }
+
+// Donja traka (#card-fs-nav) — mic + akcija zavise od kartice; ←/→ ide Okolnosti↔Izuzeti
+function configCardFsNav(id) {
+  const isOk = id === "okolnosti-card";
+  const mic = document.getElementById("cardfs-mic");
+  const act = document.getElementById("cardfs-act");
+  const prev = document.getElementById("cardfs-prev");
+  const next = document.getElementById("cardfs-next");
+  if (mic) mic.style.display = isOk ? "" : "none";  // Izuzeti (check-lista) nema diktiranja
+  if (act) act.textContent = isOk ? "✨ Doradi" : "✨ Sažmi";
+  const i = CARD_FS_ORDER.indexOf(id);
+  if (prev) {
+    prev.disabled = i <= 0;
+    prev.textContent = i > 0 ? "← Okolnosti" : "←";
+  }
+  if (next) {
+    next.disabled = i < 0 || i >= CARD_FS_ORDER.length - 1;
+    next.textContent = i < CARD_FS_ORDER.length - 1 ? "Izuzeti →" : "→";
+  }
+}
+function cardFsGo(dir) {
+  const i = CARD_FS_ORDER.indexOf(STATE.fsCardId);
+  if (i < 0) return;
+  const ni = i + dir;
+  if (ni < 0 || ni >= CARD_FS_ORDER.length) return;
+  enterCardFullscreen(document.getElementById(CARD_FS_ORDER[ni]));
+}
+
 document.addEventListener("click", e => {
   const opener = e.target.closest("[data-fs-card]");
   if (opener) { enterCardFullscreen(document.getElementById(opener.dataset.fsCard)); return; }
   const closer = e.target.closest("[data-fs-close]");
   if (closer) { exitCardFullscreen(); return; }
 });
+
+// Bind donje trake (#card-fs-nav)
+(function bindCardFsNav() {
+  const prev = document.getElementById("cardfs-prev");
+  const next = document.getElementById("cardfs-next");
+  const mic = document.getElementById("cardfs-mic");
+  const act = document.getElementById("cardfs-act");
+  if (prev) prev.addEventListener("click", () => cardFsGo(-1));
+  if (next) next.addEventListener("click", () => cardFsGo(1));
+  if (mic) mic.addEventListener("click", () => {
+    if (STATE.fsCardId === "okolnosti-card") toggleOkolnostiMic(mic);
+  });
+  if (act) act.addEventListener("click", () => {
+    if (STATE.fsCardId === "okolnosti-card") cleanupOkolnosti(act);
+    else if (STATE.fsCardId === "izuzeti-card") sazmiIzuzeti(act);
+  });
+})();
 
 function focusGo(dir) {
   const ids = (STATE.config.sections || []).map(s => s.id);
