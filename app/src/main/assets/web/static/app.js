@@ -1413,12 +1413,19 @@ function renderSections() {
     const nm = /^\s*(\d+)\.\s*(.*)$/.exec(s.title);
     const idx = nm ? nm[1] : "";
     const ttl = nm ? nm[2] : s.title;
+    // Dio naziva u zagradi (npr. „(pol, dužina, dob, odjeća)") → u novi red, sitnije.
+    const pm = /^(.*?)\s*(\([^)]*\))\s*$/.exec(ttl);
+    const ttlMain = pm ? pm[1] : ttl;
+    const ttlSub = pm ? pm[2] : "";
 
     const headerHtml = `
       <div class="card-header-row">
         <button class="card-header" data-toggle>
           <span class="section-idx">${escapeHtml(idx)}</span>
-          <span class="card-title">${escapeHtml(ttl)}</span>
+          <span class="card-title">
+            <span class="ct-main">${escapeHtml(ttlMain)}</span>
+            ${ttlSub ? `<span class="ct-sub">${escapeHtml(ttlSub)}</span>` : ""}
+          </span>
         </button>
         <span class="section-status"></span>
         <button class="btn-focus" data-focus title="Cijeli ekran" aria-label="Cijeli ekran">⛶</button>
@@ -1976,7 +1983,12 @@ window.onAndroidBack = function () {
   if (typeof STATE !== "undefined" && STATE.focusSectionId) { exitFocus(); return true; }
   // 4) Okolnosti/Izuzeti kartica otvorena u fullscreen → nazad na listu
   if (typeof STATE !== "undefined" && STATE.fsCardId) { exitCardFullscreen(); return true; }
-  return false;
+  // 5) Otvorena akordeon-kartica na home (Zaglavlje) → zatvori je
+  const openCard = document.querySelector("#app > .card.collapsible.open:not(.fullscreen)");
+  if (openCard) { openCard.classList.remove("open"); return true; }
+  // Nema šta zatvoriti. Vraćamo true svejedno — back NIKAD ne obara aplikaciju
+  // (ni na osnovnom prikazu); korisnik izlazi Home dugmetom, ne slučajnim back-om.
+  return true;
 };
 
 // === Okolnosti/Izuzeti kartice: otvaranje u FULLSCREEN (kao sekcije), izlaz ✕ ===
