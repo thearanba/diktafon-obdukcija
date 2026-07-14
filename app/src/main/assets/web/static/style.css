@@ -499,6 +499,8 @@ html, body {
 .item-card .seg-tab { padding: 7px 8px; font-size: 13px; }
 /* prostor na dnu da posljednje polje ne ostane iza tastature + donje trake */
 .card.fullscreen .card-body { padding-bottom: 52vh; }
+/* Izuzeti u fullscreen: „Sažmi" je u donjoj traci (#card-fs-nav), pa se onaj u tijelu skriva */
+#izuzeti-card.fullscreen #btn-izuzeti-sazmi { display: none; }
 body.has-fullscreen { overflow: hidden; }
 
 /* Tabovi: Diktat | Finalno */
