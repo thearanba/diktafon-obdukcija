@@ -444,7 +444,17 @@ html, body {
 }
 .card-header-row .card-header { flex: 1; min-width: 0; padding-right: 84px; }
 /* Naslov skraćuje (…) prije statusnog pill-a — ne preklapaju se */
-.card-header-row .card-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-header-row .card-title { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ct-main { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
 .btn-focus {
   display: none;  /* u listi nije potreban — klik na sekciju otvara fokus */
   flex: 0 0 auto;
@@ -668,7 +678,8 @@ body.has-fullscreen { overflow: hidden; }
 .card.fullscreen .section-idx,
 .card.fullscreen .card-summary,
 .card.fullscreen .card-meta { display: none; }
-.card.fullscreen .card-title { text-align: center; width: 100%; }
+.card.fullscreen .card-title { text-align: center; width: 100%; align-items: center; }
+.card.fullscreen .ct-sub { display: none; }
 
 /* Naslov sekcije + sažetak (dva reda) */
 .section-head {
