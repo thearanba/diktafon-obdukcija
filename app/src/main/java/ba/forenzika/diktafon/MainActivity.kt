@@ -463,6 +463,21 @@ class MainActivity : AppCompatActivity() {
         else -> super.onOptionsItemSelected(item)
     }
 
+    // „Back" dugme: ako je u WebView-u otvoren fokus-kokpit / overlay / modal, back radi
+    // KORAK NAZAD (zatvori ga) umjesto da obori aplikaciju na home screen. JS `onAndroidBack`
+    // vrati '1' ako je nešto zatvorio; inače (na listi/home) ide na home screen.
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (!::webView.isInitialized) { super.onBackPressed(); return }
+        webView.evaluateJavascript(
+            "(window.onAndroidBack && window.onAndroidBack()) ? '1' : '0'"
+        ) { result ->
+            if (result?.contains("1") != true) {
+                moveTaskToBack(true)   // nema šta zatvoriti → na home (app ostaje u pozadini)
+            }
+        }
+    }
+
     override fun onDestroy() {
         // Guard-put (preusmjerenje na LoginActivity) završi PRIJE inicijalizacije webView-a —
         // bezuslovni destroy() bi tu bacio UninitializedPropertyAccessException (pad pri startu)

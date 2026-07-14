@@ -1308,12 +1308,18 @@ function renderSections() {
     card.className = "card collapsible";
     card.dataset.sectionId = s.id;
 
+    // Broj sekcije (npr. "3. Vidljive povrede") → narandžasti redni broj lijevo,
+    // odvojen od naziva; pod-sekcije bez broja (Konstitucija, Usta…) dobiju praznu kolonu.
+    const nm = /^\s*(\d+)\.\s*(.*)$/.exec(s.title);
+    const idx = nm ? nm[1] : "";
+    const ttl = nm ? nm[2] : s.title;
+
     const headerHtml = `
       <div class="card-header-row">
         <button class="card-header" data-toggle>
-          <span class="caret">▸</span>
+          <span class="section-idx">${escapeHtml(idx)}</span>
           <span class="section-head">
-            <span class="card-title">${escapeHtml(s.title)}</span>
+            <span class="card-title">${escapeHtml(ttl)}</span>
             <span class="card-summary"></span>
           </span>
         </button>
@@ -1644,11 +1650,11 @@ function updateSectionStatus(sectionId) {
     hasRaw = (sec.raw || "").trim().length > 0;
     hasFinal = (sec.final || "").trim().length > 0;
   }
-  // Marker: "S" (spojeno — ima finalni) / "D" (diktat — samo sirovi) / prazno (skriven)
-  dot.classList.toggle("dictated", hasRaw && !hasFinal);
-  dot.classList.toggle("cleaned", hasFinal);
-  dot.textContent = hasFinal ? "S" : (hasRaw ? "D" : "");
-  dot.title = hasFinal ? "Spojeno" : (hasRaw ? "Diktat (nespojeno)" : "");
+  // Status pill: "finalno" (ima finalni) / "diktat" (samo sirovi) / "prazno" (template)
+  dot.classList.remove("dictated", "cleaned", "empty");
+  if (hasFinal) { dot.textContent = "finalno"; dot.classList.add("cleaned"); }
+  else if (hasRaw) { dot.textContent = "diktat"; dot.classList.add("dictated"); }
+  else { dot.textContent = "prazno"; dot.classList.add("empty"); }
   const sum = card.querySelector(".card-summary");
   if (sum) sum.textContent = sectionSummary(sectionId);
 }
@@ -1860,6 +1866,21 @@ function exitFocus() {
   const fnav = document.getElementById("focus-nav");
   if (fnav) fnav.classList.remove("show");
 }
+
+// Android „back" dugme (poziva ga MainActivity.onBackPressed preko WebView-a).
+// Vraća true ako je nešto zatvoreno (korak nazad) → app ostaje otvorena;
+// false ako nema šta zatvoriti → MainActivity smije na home screen.
+window.onAndroidBack = function () {
+  // 1) Otvoreni overlay (Okolnosti / Izuzeti uzorci) — klik na njegov ✕ (koristi postojeću logiku)
+  const ovClose = document.querySelector(".fs-overlay .fs-overlay-close");
+  if (ovClose) { ovClose.click(); return true; }
+  // 2) Otvoreni modal (Drafti, potvrde) — klik na ✕ / zatvaranje
+  const modalClose = document.querySelector(".modal-overlay [data-close-modal], .modal-overlay .modal-close");
+  if (modalClose) { modalClose.click(); return true; }
+  // 3) Fokus-kokpit (sekcija preko cijelog ekrana) → nazad na listu
+  if (typeof STATE !== "undefined" && STATE.focusSectionId) { exitFocus(); return true; }
+  return false;
+};
 
 function focusGo(dir) {
   const ids = (STATE.config.sections || []).map(s => s.id);
