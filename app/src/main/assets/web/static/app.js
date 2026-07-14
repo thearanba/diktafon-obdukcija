@@ -2753,8 +2753,11 @@ function stopRecTimer() {
   STATE.recPausedAt = null;
   STATE.recPausedMs = 0;
   stopAmpMeter();
-  const badge = document.getElementById("rec-timer");
-  if (badge) { badge.classList.remove("show", "paused"); }
+  // Badge postoji u OBJE donje trake — ugasi oba (inače onaj drugi „zaglavi" na ekranu)
+  ["rec-timer", "rec-timer-card"].forEach(bid => {
+    const badge = document.getElementById(bid);
+    if (badge) badge.classList.remove("show", "paused");
+  });
   buzz(40);  // potvrda: snimanje stalo
 }
 
