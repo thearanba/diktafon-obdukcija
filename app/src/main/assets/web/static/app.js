@@ -983,9 +983,11 @@ function prependToOkolnosti(line) {
 function setOkolnostiMicState(btn, state) {
   if (!btn) return;
   btn.classList.remove("recording", "processing");
-  if (state === "recording") { btn.classList.add("recording"); btn.textContent = "⏹ Zaustavi"; }
-  else if (state === "processing") { btn.classList.add("processing"); btn.textContent = "⏳ Obrađujem..."; }
-  else { btn.textContent = "🎤 Diktiraj"; }
+  const round = btn.classList.contains("focus-mic");  // okruglo dugme donje trake = samo ikona
+  if (state === "recording") { btn.classList.add("recording"); btn.textContent = round ? "⏹" : "⏹ Zaustavi"; }
+  else if (state === "processing") { btn.classList.add("processing"); btn.textContent = round ? "⏳" : "⏳ Obrađujem..."; }
+  else { btn.textContent = round ? "🎤" : "🎤 Diktiraj"; if (round) btn.classList.remove("paused"); }
+  if (typeof updateCardFsActLabel === "function") updateCardFsActLabel();
 }
 
 function appendToOkolnosti(text) {
@@ -1080,6 +1082,87 @@ async function cleanupOkolnosti(btn) {
   } finally {
     btn.disabled = false;
     btn.textContent = old;
+  }
+}
+
+// === Izuzeti uzorci — diktiranje u ručni unos (za uzorke kojih nema na check-listi) ===
+// Transkript ide u ZADNJE FOKUSIRANO ručno polje; ako nijedno nije dirano — u prvu
+// grupu s ručnim unosom (Daktiloskopija).
+document.addEventListener("focusin", e => {
+  if (e.target && e.target.matches && e.target.matches("[data-izuzeti-manual]")) {
+    STATE.izuzetiMicGroup = e.target.dataset.izuzetiManual;
+  }
+});
+
+function appendToIzuzetiManual(text) {
+  if (!text) return;
+  izuzetiInitState();
+  let gid = STATE.izuzetiMicGroup;
+  if (!gid || !IZUZETI_GROUPS.some(g => g.id === gid && g.manual)) {
+    const firstManual = IZUZETI_GROUPS.find(g => g.manual);
+    gid = firstManual ? firstManual.id : "g0";
+  }
+  const cur = (STATE.header.izuzeti_manual[gid] || "").trim();
+  // Whisper zna završiti tačkom — u listi razdvojenoj zarezima smeta
+  const add = text.trim().replace(/\.\s*$/, "");
+  STATE.header.izuzeti_manual[gid] = cur ? cur + ", " + add : add;
+  const inp = document.querySelector(`[data-izuzeti-manual="${gid}"]`);
+  if (inp) inp.value = STATE.header.izuzeti_manual[gid];
+  refreshIzuzetiPreview();
+  autoSave();
+}
+
+async function toggleIzuzetiMic(btn) {
+  // Ako već snima — zaustavi
+  if (STATE.recording && STATE.recording.izuzeti) {
+    if (STATE.recording.mediaRecorder) STATE.recording.mediaRecorder.stop();
+    return;
+  }
+  if (!STATE.config.stt_options.includes("groq")) {
+    toast("Groq nije konfigurisan (Postavke).", "error");
+    return;
+  }
+  if (STATE.recording) stopRecording();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
+    const chunks = [];
+    const rec = { izuzeti: true, mediaRecorder: mr, chunks };
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (STATE.recording === rec) { STATE.recording = null; stopRecTimer(); }
+      setOkolnostiMicState(btn, "processing");
+      try {
+        const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+        if (blob.size < MIN_AUDIO_BYTES) {
+          toast("Snimak prekratak (slučajan klik?) — ništa nije poslano", "error");
+          return;
+        }
+        const fd = new FormData();
+        fd.append("audio", blob, "audio.webm");
+        fd.append("section_id", "dodatne");  // termini: histološka/toksikološka/DNA
+        const res = await api("/api/transcribe", { method: "POST", body: fd });
+        if (!(res.text || "").trim()) {
+          toast("Nije prepoznat govor (tišina/prekratko) — pokušaj ponovo", "error");
+        } else {
+          appendToIzuzetiManual(res.text);
+          buzz([40, 80, 40]);
+          toast("Transkripcija ✓", "success");
+        }
+      } catch (err) {
+        toast("Transkripcija greška: " + err.message, "error");
+      } finally {
+        setOkolnostiMicState(btn, "idle");
+      }
+    };
+    mr.start();
+    STATE.recording = rec;
+    startRecTimer(stream);
+    setOkolnostiMicState(btn, "recording");
+  } catch (err) {
+    toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
+    console.error(err);
   }
 }
 
@@ -2015,30 +2098,65 @@ function exitCardFullscreen() {
 }
 
 // Donja traka (#card-fs-nav) — mic + akcija zavise od kartice; ←/→ ide Okolnosti↔Izuzeti
-function configCardFsNav(id) {
-  const isOk = id === "okolnosti-card";
-  const mic = document.getElementById("cardfs-mic");
-  const act = document.getElementById("cardfs-act");
-  const prev = document.getElementById("cardfs-prev");
-  const next = document.getElementById("cardfs-next");
-  if (mic) mic.style.display = isOk ? "" : "none";  // Izuzeti (check-lista) nema diktiranja
-  if (act) act.textContent = isOk ? "✨ Doradi" : "✨ Sažmi";
-  const i = CARD_FS_ORDER.indexOf(id);
-  if (prev) {
-    prev.disabled = i <= 0;
-    prev.textContent = i > 0 ? "← Okolnosti" : "←";
-  }
-  if (next) {
-    next.disabled = i < 0 || i >= CARD_FS_ORDER.length - 1;
-    next.textContent = i < CARD_FS_ORDER.length - 1 ? "Izuzeti →" : "→";
-  }
+// === Jedinstvena navigacija ←/→ kroz cijeli tok ===
+// Redoslijed: Okolnosti → Izuzeti → sve sekcije. Zaglavlje je „ispred" Okolnosti
+// (lijeva strelica s Okolnosti otvara Zaglavlje kao akordeon na home).
+function focusOrder() {
+  return ["okolnosti-card", "izuzeti-card", ...(STATE.config.sections || []).map(s => s.id)];
 }
-function cardFsGo(dir) {
-  const i = CARD_FS_ORDER.indexOf(STATE.fsCardId);
+function focusLabelFor(id) {
+  if (id === "okolnosti-card") return STATE.header.okolnosti_label || "Okolnosti slučaja";
+  if (id === "izuzeti-card") return "Izuzeti uzorci";
+  const s = (STATE.config.sections || []).find(x => x.id === id);
+  return s ? s.title : id;
+}
+function currentNavId() { return STATE.fsCardId || STATE.focusSectionId || null; }
+function enterAny(id) {
+  if (id === "okolnosti-card" || id === "izuzeti-card") enterCardFullscreen(document.getElementById(id));
+  else enterFocus(id);
+}
+function openZaglavljeFromNav() {
+  exitCardFullscreen();
+  if (typeof exitFocus === "function") exitFocus();
+  const hc = document.getElementById("header-card");
+  if (!hc) return;
+  document.querySelectorAll(".card.collapsible.open").forEach(c => c.classList.remove("open"));
+  hc.classList.add("open");
+  setTimeout(() => hc.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+}
+function navGo(dir) {
+  const ids = focusOrder();
+  const i = ids.indexOf(currentNavId());
   if (i < 0) return;
   const ni = i + dir;
-  if (ni < 0 || ni >= CARD_FS_ORDER.length) return;
-  enterCardFullscreen(document.getElementById(CARD_FS_ORDER[ni]));
+  if (ni < 0) { openZaglavljeFromNav(); return; }   // ispred Okolnosti → Zaglavlje
+  if (ni >= ids.length) return;
+  enterAny(ids[ni]);
+}
+// Postavi ←/→ labele (dijele ih i sekcijska i card traka)
+function setNavArrows(prevBtn, nextBtn) {
+  const ids = focusOrder();
+  const i = ids.indexOf(currentNavId());
+  if (prevBtn) {
+    prevBtn.disabled = false;  // uvijek aktivno (prvi ← ide na Zaglavlje)
+    const label = i > 0 ? focusLabelFor(ids[i - 1]) : "Zaglavlje";
+    prevBtn.textContent = "← " + shortTitle(label);
+  }
+  if (nextBtn) {
+    const has = i >= 0 && i < ids.length - 1;
+    nextBtn.disabled = !has;
+    nextBtn.textContent = has ? shortTitle(focusLabelFor(ids[i + 1])) + " →" : "→";
+  }
+}
+function configCardFsNav(id) {
+  const isOk = id === "okolnosti-card";
+  const act = document.getElementById("cardfs-act");
+  // I Okolnosti i Izuzeti imaju diktiranje (Izuzeti = za ručni unos uzoraka)
+  const mic = document.getElementById("cardfs-mic");
+  if (mic) mic.style.display = "";
+  if (act) act.textContent = isOk ? "✨ Doradi" : "✨ Sažmi";
+  setNavArrows(document.getElementById("cardfs-prev"), document.getElementById("cardfs-next"));
+  updateCardFsMic();
 }
 
 document.addEventListener("click", e => {
@@ -2048,47 +2166,58 @@ document.addEventListener("click", e => {
   if (closer) { exitCardFullscreen(); return; }
 });
 
+// Mic dugme card-trake: ikona/stanje kao sekcijski focus-mic (⏹ dok snima, pauza klasa)
+function updateCardFsMic() {
+  const fm = document.getElementById("cardfs-mic");
+  if (!fm) return;
+  const rec = !!STATE.recording;
+  fm.classList.toggle("recording", rec);
+  if (!rec) fm.classList.remove("paused");
+  fm.textContent = rec ? "⏹" : "🎤";
+  updateCardFsActLabel();
+}
+
+// Akcijsko dugme card-trake: dok snima = Pauza/Nastavi; inače Doradi/Sažmi
+function updateCardFsActLabel() {
+  const act = document.getElementById("cardfs-act");
+  if (!act) return;
+  if (STATE.fsCardId && STATE.recording && STATE.recording.mediaRecorder) {
+    act.textContent = isRecPaused() ? "▶ Nastavi" : "⏸ Pauza";
+    act.classList.remove("working");
+    return;
+  }
+  act.textContent = STATE.fsCardId === "izuzeti-card" ? "✨ Sažmi" : "✨ Doradi";
+}
+
 // Bind donje trake (#card-fs-nav)
 (function bindCardFsNav() {
   const prev = document.getElementById("cardfs-prev");
   const next = document.getElementById("cardfs-next");
   const mic = document.getElementById("cardfs-mic");
   const act = document.getElementById("cardfs-act");
-  if (prev) prev.addEventListener("click", () => cardFsGo(-1));
-  if (next) next.addEventListener("click", () => cardFsGo(1));
+  if (prev) prev.addEventListener("click", () => navGo(-1));
+  if (next) next.addEventListener("click", () => navGo(1));
   if (mic) mic.addEventListener("click", () => {
     if (STATE.fsCardId === "okolnosti-card") toggleOkolnostiMic(mic);
+    else if (STATE.fsCardId === "izuzeti-card") toggleIzuzetiMic(mic);
   });
   if (act) act.addEventListener("click", () => {
+    // Dok snima: Pauza/Nastavi (isto kao lijevo kokpit-dugme kod sekcija)
+    if (STATE.fsCardId && STATE.recording && STATE.recording.mediaRecorder) {
+      pauseResumeRecording();
+      return;
+    }
     if (STATE.fsCardId === "okolnosti-card") cleanupOkolnosti(act);
     else if (STATE.fsCardId === "izuzeti-card") sazmiIzuzeti(act);
   });
 })();
 
-function focusGo(dir) {
-  const ids = (STATE.config.sections || []).map(s => s.id);
-  const i = ids.indexOf(STATE.focusSectionId);
-  if (i < 0) return;
-  const ni = i + dir;
-  if (ni < 0 || ni >= ids.length) return;
-  enterFocus(ids[ni]);
-}
+// Sekcijska traka koristi ISTI jedinstveni lanac (Zaglavlje←Okolnosti↔Izuzeti↔sekcije):
+// s prve sekcije ← vodi na Izuzete uzorke, s Okolnosti ← na Zaglavlje.
+function focusGo(dir) { navGo(dir); }
 
 function updateFocusNav() {
-  const secs = STATE.config.sections || [];
-  const i = secs.findIndex(s => s.id === STATE.focusSectionId);
-  const prev = document.getElementById("focus-prev");
-  const next = document.getElementById("focus-next");
-  if (prev) {
-    const has = i > 0;
-    prev.disabled = !has;
-    prev.textContent = has ? "← " + shortTitle(secs[i - 1].title) : "←";
-  }
-  if (next) {
-    const has = i >= 0 && i < secs.length - 1;
-    next.disabled = !has;
-    next.textContent = has ? shortTitle(secs[i + 1].title) + " →" : "→";
-  }
+  setNavArrows(document.getElementById("focus-prev"), document.getElementById("focus-next"));
 }
 
 function updateFocusMic() {
@@ -2573,7 +2702,10 @@ function pauseResumeRecording() {
   } else { return; }
   const fm = document.getElementById("focus-mic");
   if (fm) fm.classList.toggle("paused", isRecPaused());
+  const cfm = document.getElementById("cardfs-mic");
+  if (cfm) cfm.classList.toggle("paused", isRecPaused());
   updateFocusClearLabel();
+  if (typeof updateCardFsActLabel === "function") updateCardFsActLabel();
   updateRecTimerLabels();
 }
 
@@ -2595,13 +2727,15 @@ function updateFocusClearLabel() {
 function updateRecTimerLabels() {
   const t = recElapsed();
   const paused = isRecPaused();
-  const badge = document.getElementById("rec-timer");
-  if (badge) {
+  // Badge postoji u OBJE donje trake (sekcijska #rec-timer + card #rec-timer-card)
+  ["rec-timer", "rec-timer-card"].forEach(bid => {
+    const badge = document.getElementById(bid);
+    if (!badge) return;
     const show = !!STATE.recording && !!t;
     badge.classList.toggle("show", show);
     badge.classList.toggle("paused", show && paused);
     if (show) badge.textContent = (paused ? "⏸ " : "● ") + t;
-  }
+  });
   if (!STATE.recording || !t) return;
   // Inline mic dugmad (pilule sa tekstom) dobiju vrijeme u labelu
   document.querySelectorAll(".btn-mic.recording .mic-label").forEach(l => {
