@@ -1166,6 +1166,82 @@ async function toggleIzuzetiMic(btn) {
   }
 }
 
+// === Zaglavlje — diktiranje u FOKUSIRANO polje (ime, adresa, tužilac…) ===
+document.addEventListener("focusin", e => {
+  const el = e.target;
+  if (el && el.matches && el.matches("#header-body [data-header-id]")) {
+    STATE.headerMicField = el.dataset.headerId;
+  }
+});
+
+function appendToHeaderField(text) {
+  if (!text) return;
+  const fid = STATE.headerMicField;
+  if (!fid) { toast("Prvo dodirni polje u koje diktiraš (ime, adresa…)", "error"); return; }
+  const clean = text.trim().replace(/\.\s*$/, "");  // kratka polja ne završavaju tačkom
+  const cur = (STATE.header[fid] || "").trim();
+  STATE.header[fid] = cur ? cur + " " + clean : clean;
+  const inp = document.querySelector(`#header-body [data-header-id="${fid}"]`);
+  if (inp) { inp.value = STATE.header[fid]; if (inp.tagName === "TEXTAREA") autoGrow(inp); }
+  updateHeaderSummary();
+  updateDraftIndicator();
+  autoSave();
+}
+
+async function toggleHeaderMic(btn) {
+  if (STATE.recording && STATE.recording.headerField) {
+    if (STATE.recording.mediaRecorder) STATE.recording.mediaRecorder.stop();
+    return;
+  }
+  if (!STATE.config.stt_options.includes("groq")) {
+    toast("Groq nije konfigurisan (Postavke).", "error");
+    return;
+  }
+  if (!STATE.headerMicField) { toast("Prvo dodirni polje u koje diktiraš (ime, adresa…)", "error"); return; }
+  if (STATE.recording) stopRecording();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
+    const chunks = [];
+    const rec = { headerField: true, mediaRecorder: mr, chunks };
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (STATE.recording === rec) { STATE.recording = null; stopRecTimer(); }
+      setOkolnostiMicState(btn, "processing");
+      try {
+        const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+        if (blob.size < MIN_AUDIO_BYTES) {
+          toast("Snimak prekratak (slučajan klik?) — ništa nije poslano", "error");
+          return;
+        }
+        const fd = new FormData();
+        fd.append("audio", blob, "audio.webm");
+        fd.append("section_id", "");  // bazni whisper prompt (imena/adrese, ne anatomija)
+        const res = await api("/api/transcribe", { method: "POST", body: fd });
+        if (!(res.text || "").trim()) {
+          toast("Nije prepoznat govor (tišina/prekratko) — pokušaj ponovo", "error");
+        } else {
+          appendToHeaderField(res.text);
+          buzz([40, 80, 40]);
+          toast("Transkripcija ✓", "success");
+        }
+      } catch (err) {
+        toast("Transkripcija greška: " + err.message, "error");
+      } finally {
+        setOkolnostiMicState(btn, "idle");
+      }
+    };
+    mr.start();
+    STATE.recording = rec;
+    startRecTimer(stream);
+    setOkolnostiMicState(btn, "recording");
+  } catch (err) {
+    toast("Greška mikrofona [" + (err.name || "?") + "]: " + err.message, "error");
+    console.error(err);
+  }
+}
+
 // === Render: header form ===
 function renderHeaderForm() {
   const body = $("#header-body");
@@ -2071,14 +2147,14 @@ window.onAndroidBack = function () {
   return true;
 };
 
-// === Okolnosti/Izuzeti kartice: otvaranje u FULLSCREEN (kao sekcije), izlaz ✕ ===
-const CARD_FS_ORDER = ["okolnosti-card", "izuzeti-card"];  // ←/→ navigacija između njih
+// === Zaglavlje/Okolnosti/Izuzeti kartice: otvaranje u FULLSCREEN (kao sekcije), izlaz ✕ ===
+const CARD_FS_ORDER = ["header-card", "okolnosti-card", "izuzeti-card"];
+const CARD_FS_SEL = "#header-card.fullscreen, #okolnosti-card.fullscreen, #izuzeti-card.fullscreen";
 
 function enterCardFullscreen(card) {
   if (!card) return;
   if (typeof exitFocus === "function") exitFocus();  // zatvori eventualni sekcijski fokus
-  document.querySelectorAll("#okolnosti-card.fullscreen, #izuzeti-card.fullscreen")
-    .forEach(c => c.classList.remove("fullscreen", "open"));
+  document.querySelectorAll(CARD_FS_SEL).forEach(c => c.classList.remove("fullscreen", "open"));
   card.classList.add("fullscreen", "open");
   document.body.classList.add("has-fullscreen");
   STATE.fsCardId = card.id;
@@ -2089,22 +2165,21 @@ function enterCardFullscreen(card) {
   card.scrollTop = 0;
 }
 function exitCardFullscreen() {
-  document.querySelectorAll("#okolnosti-card.fullscreen, #izuzeti-card.fullscreen")
-    .forEach(c => c.classList.remove("fullscreen", "open"));
+  document.querySelectorAll(CARD_FS_SEL).forEach(c => c.classList.remove("fullscreen", "open"));
   document.body.classList.remove("has-fullscreen");
   STATE.fsCardId = null;
   const nav = document.getElementById("card-fs-nav");
   if (nav) nav.classList.remove("show");
 }
 
-// Donja traka (#card-fs-nav) — mic + akcija zavise od kartice; ←/→ ide Okolnosti↔Izuzeti
 // === Jedinstvena navigacija ←/→ kroz cijeli tok ===
-// Redoslijed: Okolnosti → Izuzeti → sve sekcije. Zaglavlje je „ispred" Okolnosti
-// (lijeva strelica s Okolnosti otvara Zaglavlje kao akordeon na home).
+// Redoslijed: Zaglavlje → Okolnosti → Izuzeti → sve sekcije. Sve tri kartice se
+// otvaraju u fullscreen sa ISTOM donjom trakom (#card-fs-nav) kao sekcije.
 function focusOrder() {
-  return ["okolnosti-card", "izuzeti-card", ...(STATE.config.sections || []).map(s => s.id)];
+  return [...CARD_FS_ORDER, ...(STATE.config.sections || []).map(s => s.id)];
 }
 function focusLabelFor(id) {
+  if (id === "header-card") return "Zaglavlje";
   if (id === "okolnosti-card") return STATE.header.okolnosti_label || "Okolnosti slučaja";
   if (id === "izuzeti-card") return "Izuzeti uzorci";
   const s = (STATE.config.sections || []).find(x => x.id === id);
@@ -2112,25 +2187,15 @@ function focusLabelFor(id) {
 }
 function currentNavId() { return STATE.fsCardId || STATE.focusSectionId || null; }
 function enterAny(id) {
-  if (id === "okolnosti-card" || id === "izuzeti-card") enterCardFullscreen(document.getElementById(id));
+  if (CARD_FS_ORDER.includes(id)) enterCardFullscreen(document.getElementById(id));
   else enterFocus(id);
-}
-function openZaglavljeFromNav() {
-  exitCardFullscreen();
-  if (typeof exitFocus === "function") exitFocus();
-  const hc = document.getElementById("header-card");
-  if (!hc) return;
-  document.querySelectorAll(".card.collapsible.open").forEach(c => c.classList.remove("open"));
-  hc.classList.add("open");
-  setTimeout(() => hc.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
 }
 function navGo(dir) {
   const ids = focusOrder();
   const i = ids.indexOf(currentNavId());
   if (i < 0) return;
   const ni = i + dir;
-  if (ni < 0) { openZaglavljeFromNav(); return; }   // ispred Okolnosti → Zaglavlje
-  if (ni >= ids.length) return;
+  if (ni < 0 || ni >= ids.length) return;
   enterAny(ids[ni]);
 }
 // Postavi ←/→ labele (dijele ih i sekcijska i card traka)
@@ -2138,9 +2203,9 @@ function setNavArrows(prevBtn, nextBtn) {
   const ids = focusOrder();
   const i = ids.indexOf(currentNavId());
   if (prevBtn) {
-    prevBtn.disabled = false;  // uvijek aktivno (prvi ← ide na Zaglavlje)
-    const label = i > 0 ? focusLabelFor(ids[i - 1]) : "Zaglavlje";
-    prevBtn.textContent = "← " + shortTitle(label);
+    const has = i > 0;
+    prevBtn.disabled = !has;
+    prevBtn.textContent = has ? "← " + shortTitle(focusLabelFor(ids[i - 1])) : "←";
   }
   if (nextBtn) {
     const has = i >= 0 && i < ids.length - 1;
@@ -2149,12 +2214,17 @@ function setNavArrows(prevBtn, nextBtn) {
   }
 }
 function configCardFsNav(id) {
-  const isOk = id === "okolnosti-card";
+  // Sve tri kartice imaju mic (Zaglavlje/Izuzeti diktiraju u fokusirano/ručno polje);
+  // akcijsko dugme zavisi od kartice.
   const act = document.getElementById("cardfs-act");
-  // I Okolnosti i Izuzeti imaju diktiranje (Izuzeti = za ručni unos uzoraka)
   const mic = document.getElementById("cardfs-mic");
   if (mic) mic.style.display = "";
-  if (act) act.textContent = isOk ? "✨ Doradi" : "✨ Sažmi";
+  if (act) {
+    act.style.display = "";
+    if (id === "header-card") act.textContent = "📋 Naredba";
+    else if (id === "okolnosti-card") act.textContent = "✨ Doradi";
+    else act.textContent = "✨ Sažmi";
+  }
   setNavArrows(document.getElementById("cardfs-prev"), document.getElementById("cardfs-next"));
   updateCardFsMic();
 }
@@ -2177,7 +2247,7 @@ function updateCardFsMic() {
   updateCardFsActLabel();
 }
 
-// Akcijsko dugme card-trake: dok snima = Pauza/Nastavi; inače Doradi/Sažmi
+// Akcijsko dugme card-trake: dok snima = Pauza/Nastavi; inače po kartici
 function updateCardFsActLabel() {
   const act = document.getElementById("cardfs-act");
   if (!act) return;
@@ -2186,7 +2256,9 @@ function updateCardFsActLabel() {
     act.classList.remove("working");
     return;
   }
-  act.textContent = STATE.fsCardId === "izuzeti-card" ? "✨ Sažmi" : "✨ Doradi";
+  if (STATE.fsCardId === "header-card") act.textContent = "📋 Naredba";
+  else if (STATE.fsCardId === "izuzeti-card") act.textContent = "✨ Sažmi";
+  else act.textContent = "✨ Doradi";
 }
 
 // Bind donje trake (#card-fs-nav)
@@ -2198,7 +2270,8 @@ function updateCardFsActLabel() {
   if (prev) prev.addEventListener("click", () => navGo(-1));
   if (next) next.addEventListener("click", () => navGo(1));
   if (mic) mic.addEventListener("click", () => {
-    if (STATE.fsCardId === "okolnosti-card") toggleOkolnostiMic(mic);
+    if (STATE.fsCardId === "header-card") toggleHeaderMic(mic);
+    else if (STATE.fsCardId === "okolnosti-card") toggleOkolnostiMic(mic);
     else if (STATE.fsCardId === "izuzeti-card") toggleIzuzetiMic(mic);
   });
   if (act) act.addEventListener("click", () => {
@@ -2207,7 +2280,11 @@ function updateCardFsActLabel() {
       pauseResumeRecording();
       return;
     }
-    if (STATE.fsCardId === "okolnosti-card") cleanupOkolnosti(act);
+    if (STATE.fsCardId === "header-card") {
+      const f = document.getElementById("btn-naredba-file");   // Auto-popuni iz naredbe (fajl)
+      if (f) f.click();
+    }
+    else if (STATE.fsCardId === "okolnosti-card") cleanupOkolnosti(act);
     else if (STATE.fsCardId === "izuzeti-card") sazmiIzuzeti(act);
   });
 })();
@@ -3407,9 +3484,8 @@ async function init() {
   renderSections();
   updateDraftIndicator();
 
-  if (!STATE.header.ime_prezime) {
-    $("#header-card").classList.add("open");
-  }
+  // (Zaglavlje se više ne otvara automatski — sad je fullscreen kartica kao ostale;
+  //  inline "open" bez fullscreen bi prikazao formu nasred home liste.)
 
   $("#btn-drafts").addEventListener("click", openDraftsModal);
   $("#btn-new-draft").addEventListener("click", newDraft);

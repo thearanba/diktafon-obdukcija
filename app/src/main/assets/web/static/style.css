@@ -420,10 +420,12 @@ html, body {
   color: var(--text-dim);
   font-weight: 400;
 }
-/* Okolnosti/Izuzeti kartica: NASLOV je fiksan, meta-snippet se skraćuje (…)
-   — inače dug tekst okolnosti (stari slučajevi) istisne naslov iz reda */
+/* Zaglavlje/Okolnosti/Izuzeti kartica: NASLOV je fiksan, meta-snippet se skraćuje (…)
+   — inače dug tekst (stari slučajevi) istisne naslov iz reda */
+#header-card .card-header .card-title,
 #okolnosti-card .card-header .card-title,
 #izuzeti-card .card-header .card-title { flex: 0 0 auto; max-width: 55%; }
+#header-card .card-header .card-meta,
 #okolnosti-card .card-header .card-meta,
 #izuzeti-card .card-header .card-meta {
   flex: 1 1 auto;
