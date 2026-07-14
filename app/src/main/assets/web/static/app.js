@@ -1249,14 +1249,9 @@ function renderHeaderForm() {
 
   // Auto-popuni dugme — uvuci podatke iz naredbe (PDF/foto)
   const extractDiv = document.createElement("div");
-  extractDiv.className = "extract-naredba-box";
+  // Auto-popuni iz naredbe: UI je u donjoj traci (📷 kamera / 📋 Naredba-fajl) —
+  // ovdje ostaju samo skriveni file inputi koje traka klikće.
   extractDiv.innerHTML = `
-    <div class="extract-label">📋 Auto-popuni iz naredbe</div>
-    <div class="extract-buttons">
-      <button class="btn-extract-icon" id="btn-naredba-camera" title="Slikaj naredbu">📷 Slikaj</button>
-      <button class="btn-extract-icon" id="btn-naredba-file" title="Izaberi fajl">📁 Fajl</button>
-    </div>
-    <div class="extract-hint">Claude pročita naredbu (foto/PDF) i popuni polja</div>
     <input type="file" id="file-naredba-cam" accept="image/*" capture="environment" style="display:none">
     <input type="file" id="file-naredba-doc" accept="image/*,application/pdf" style="display:none">
   `;
@@ -1348,24 +1343,22 @@ function renderHeaderForm() {
   renderOkolnostiCard();
   renderIzuzetiCard();
 
-  // Extract naredba — dvije direktne ikone (kamera / fajl), bez među-izbornika
-  const camBtn = $("#btn-naredba-camera");
-  const fileBtn = $("#btn-naredba-file");
+  // Extract naredba — skriveni file inputi; klikće ih donja traka (📷 / 📋 Naredba),
+  // pa i feedback (⏳ Šaljem Claude-u...) ide na akcijsko dugme trake.
   const camInput = $("#file-naredba-cam");
   const docInput = $("#file-naredba-doc");
-  if (camBtn && camInput) camBtn.addEventListener("click", () => camInput.click());
-  if (fileBtn && docInput) fileBtn.addEventListener("click", () => docInput.click());
-  const bindNaredbaInput = (input, btn) => {
+  const bindNaredbaInput = (input) => {
     if (!input) return;
     input.addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      await extractNaredba(file, btn);
+      const fb = document.getElementById("cardfs-act") || input;
+      await extractNaredba(file, fb);
       e.target.value = "";
     });
   };
-  bindNaredbaInput(camInput, camBtn);
-  bindNaredbaInput(docInput, fileBtn);
+  bindNaredbaInput(camInput);
+  bindNaredbaInput(docInput);
 
   updateHeaderSummary();
 }
@@ -2214,17 +2207,15 @@ function setNavArrows(prevBtn, nextBtn) {
   }
 }
 function configCardFsNav(id) {
-  // Sve tri kartice imaju mic (Zaglavlje/Izuzeti diktiraju u fokusirano/ručno polje);
-  // akcijsko dugme zavisi od kartice.
+  // Sve tri kartice imaju mic (Zaglavlje/Izuzeti diktiraju u fokusirano/ručno polje).
+  // Zaglavlje: 📷 kamera lijevo + 📋 Naredba (fajl) desno od mic-a; ostale: samo akcija.
+  const left = document.getElementById("cardfs-left");
   const act = document.getElementById("cardfs-act");
   const mic = document.getElementById("cardfs-mic");
   if (mic) mic.style.display = "";
-  if (act) {
-    act.style.display = "";
-    if (id === "header-card") act.textContent = "📋 Naredba";
-    else if (id === "okolnosti-card") act.textContent = "✨ Doradi";
-    else act.textContent = "✨ Sažmi";
-  }
+  if (left) left.style.display = (id === "header-card") ? "" : "none";
+  if (act) act.style.display = "";
+  updateCardFsActLabel();
   setNavArrows(document.getElementById("cardfs-prev"), document.getElementById("cardfs-next"));
   updateCardFsMic();
 }
@@ -2247,11 +2238,13 @@ function updateCardFsMic() {
   updateCardFsActLabel();
 }
 
-// Akcijsko dugme card-trake: dok snima = Pauza/Nastavi; inače po kartici
+// Akcijsko dugme card-trake: dok snima = Pauza/Nastavi (NE u Zaglavlju — kratka
+// polja, pauza nepotrebna); inače po kartici.
 function updateCardFsActLabel() {
   const act = document.getElementById("cardfs-act");
   if (!act) return;
-  if (STATE.fsCardId && STATE.recording && STATE.recording.mediaRecorder) {
+  if (STATE.fsCardId && STATE.fsCardId !== "header-card"
+      && STATE.recording && STATE.recording.mediaRecorder) {
     act.textContent = isRecPaused() ? "▶ Nastavi" : "⏸ Pauza";
     act.classList.remove("working");
     return;
@@ -2265,24 +2258,33 @@ function updateCardFsActLabel() {
 (function bindCardFsNav() {
   const prev = document.getElementById("cardfs-prev");
   const next = document.getElementById("cardfs-next");
+  const left = document.getElementById("cardfs-left");
   const mic = document.getElementById("cardfs-mic");
   const act = document.getElementById("cardfs-act");
   if (prev) prev.addEventListener("click", () => navGo(-1));
   if (next) next.addEventListener("click", () => navGo(1));
+  if (left) left.addEventListener("click", () => {
+    // 📷 Slikaj naredbu (samo Zaglavlje) — kamera preko skrivenog file inputa
+    if (STATE.fsCardId === "header-card") {
+      const cam = document.getElementById("file-naredba-cam");
+      if (cam) cam.click();
+    }
+  });
   if (mic) mic.addEventListener("click", () => {
     if (STATE.fsCardId === "header-card") toggleHeaderMic(mic);
     else if (STATE.fsCardId === "okolnosti-card") toggleOkolnostiMic(mic);
     else if (STATE.fsCardId === "izuzeti-card") toggleIzuzetiMic(mic);
   });
   if (act) act.addEventListener("click", () => {
-    // Dok snima: Pauza/Nastavi (isto kao lijevo kokpit-dugme kod sekcija)
-    if (STATE.fsCardId && STATE.recording && STATE.recording.mediaRecorder) {
+    // Dok snima: Pauza/Nastavi — osim u Zaglavlju (tamo pauza ne treba)
+    if (STATE.fsCardId && STATE.fsCardId !== "header-card"
+        && STATE.recording && STATE.recording.mediaRecorder) {
       pauseResumeRecording();
       return;
     }
     if (STATE.fsCardId === "header-card") {
-      const f = document.getElementById("btn-naredba-file");   // Auto-popuni iz naredbe (fajl)
-      if (f) f.click();
+      const doc = document.getElementById("file-naredba-doc");  // 📋 Naredba (PDF/foto fajl)
+      if (doc) doc.click();
     }
     else if (STATE.fsCardId === "okolnosti-card") cleanupOkolnosti(act);
     else if (STATE.fsCardId === "izuzeti-card") sazmiIzuzeti(act);
