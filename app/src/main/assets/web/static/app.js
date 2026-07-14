@@ -840,6 +840,118 @@ function bindOkolnostiOverlay(ov) {
   });
 }
 
+// === Okolnosti / Uviđaj i Izuzeti uzorci — kao KARTICE na home (ispod Zaglavlja) ===
+// (Ranije su bile kompaktna dugmad koja otvaraju fullscreen prozor.)
+
+async function uvidjajStartClick(sBtn) {
+  const DANI_GEN = ["nedjelje", "ponedjeljka", "utorka", "srijede", "četvrtka", "petka", "subote"];
+  const d = new Date();
+  const p2 = n => String(n).padStart(2, "0");
+  const uvod = `Uviđaj dana ${DANI_GEN[d.getDay()]}, ${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}. godine u ${p2(d.getHours())}:${p2(d.getMinutes())} sati`;
+  const old = sBtn.textContent;
+  sBtn.disabled = true;
+  sBtn.textContent = "⏳ Tražim lokaciju…";
+  const done = (msg, level) => { sBtn.disabled = false; sBtn.textContent = old; toast(msg, level); };
+  if (!navigator.geolocation) {
+    prependToOkolnosti(uvod + ".");
+    done("Dodano bez adrese (GPS nedostupan)", "error");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const c = pos.coords;
+    const addr = await nativeGeocode(c.latitude, c.longitude);
+    if (addr) {
+      prependToOkolnosti(`${uvod} na adresi ${addr}.`);
+      done("Početak uviđaja dodan ✓", "success");
+    } else {
+      prependToOkolnosti(`${uvod} na lokaciji ${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)} (±${Math.round(c.accuracy)} m).`);
+      done("Adresa nedostupna — upisane koordinate (dopiši adresu)", "error");
+    }
+  }, err => {
+    prependToOkolnosti(uvod + ".");
+    done("Dodano bez adrese — GPS: " + (err.message || ("kod " + err.code)), "error");
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+}
+
+function updateOkolnostiCardMeta() {
+  const meta = document.getElementById("okolnosti-card-meta");
+  if (meta) { meta.textContent = okolnostiSnippet(); meta.classList.add("dim"); }
+}
+
+function bindOkolnostiCard(scope) {
+  const ta = scope.querySelector("#okolnosti-fs-ta");
+  if (ta) {
+    ta.addEventListener("input", () => {
+      STATE.header.okolnosti = ta.value;
+      autoGrow(ta);
+      updateHeaderSummary();
+      updateOkolnostiCardMeta();
+      autoSave();
+    });
+    autoGrow(ta);
+  }
+  const sw = scope.querySelector("#uvidjaj-switch");
+  if (sw) sw.addEventListener("click", () => {
+    const now = !STATE.header.uvidjaj_lock;
+    STATE.header.uvidjaj_lock = now;
+    STATE.header.okolnosti_label = now ? "Uviđaj" : "Okolnosti slučaja";
+    autoSave();
+    renderOkolnostiCard();  // ponovo izgradi karticu s novim modom (tekst ostaje)
+    toast(now
+      ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
+      : "Okolnosti se popunjavaju iz naredbe", "success");
+  });
+  const mic = scope.querySelector("#okolnosti-mic");
+  if (mic) mic.addEventListener("click", () => toggleOkolnostiMic(mic));
+  const dor = scope.querySelector("#okolnosti-cleanup");
+  if (dor) dor.addEventListener("click", () => cleanupOkolnosti(dor));
+  const sBtn = scope.querySelector("#uvidjaj-start");
+  if (sBtn) sBtn.addEventListener("click", () => uvidjajStartClick(sBtn));
+}
+
+function renderOkolnostiCard() {
+  const body = document.getElementById("okolnosti-card-body");
+  if (!body) return;
+  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
+  const title = document.getElementById("okolnosti-card-title");
+  if (title) title.textContent = label;
+  body.innerHTML = "";
+  body.appendChild(buildUvidjajSwitch());
+  if (STATE.header.uvidjaj_lock) {
+    const quick = document.createElement("div");
+    quick.className = "uvidjaj-quick";
+    quick.innerHTML = `<button type="button" id="uvidjaj-start" class="btn-quick">📍 Početak uviđaja (dan, datum, vrijeme, adresa)</button>`;
+    body.appendChild(quick);
+  }
+  const taWrap = document.createElement("div");
+  taWrap.className = "field";
+  taWrap.innerHTML = `<textarea class="dict-textarea" id="okolnosti-fs-ta" data-header-id="okolnosti" placeholder="Opiši okolnosti / uviđaj…">${escapeHtml(STATE.header.okolnosti || "")}</textarea>`;
+  body.appendChild(taWrap);
+  const bar = document.createElement("div");
+  bar.className = "okolnosti-actionbar";
+  bar.innerHTML = `
+    <button type="button" id="okolnosti-mic" class="btn-mic">🎤 Diktiraj</button>
+    <button type="button" id="okolnosti-cleanup" class="btn-cleanup">✨ Doradi (Claude)</button>`;
+  body.appendChild(bar);
+  bindOkolnostiCard(body);
+  updateOkolnostiCardMeta();
+}
+
+function updateIzuzetiCardMeta() {
+  const meta = document.getElementById("izuzeti-card-meta");
+  if (meta) { meta.textContent = countIzuzetiSelected() + " izabrano"; meta.classList.add("dim"); }
+}
+
+function renderIzuzetiCard() {
+  const body = document.getElementById("izuzeti-card-body");
+  if (!body) return;
+  izuzetiInitState();
+  body.innerHTML = "";
+  body.appendChild(buildIzuzetiChecklist({ label: "" }));
+  bindIzuzetiEvents(body);
+  updateIzuzetiCardMeta();
+}
+
 // Obrnuto geokodiranje preko NATIVNOG Android Geocoder-a (bez slanja trećim servisima
 // mimo sistema). Vraća "Ulica broj, Grad" ili "" ako nedostupno. Async preko mosta.
 function nativeGeocode(lat, lng) {
@@ -997,18 +1109,11 @@ function renderHeaderForm() {
   body.appendChild(extractDiv);
 
   for (const f of STATE.config.header_fields) {
-    // Izuzeti uzorci → kompaktno dugme koje otvara check-listu u fokus-prozoru
-    if (f.id === "izuzeti_uzorci") {
-      body.appendChild(buildIzuzetiOpener());
-      continue;
-    }
-    // Naziv polja okolnosti → unutar okolnosti fokus-prozora (postavlja ga switch)
+    // Okolnosti/Uviđaj i Izuzeti uzorci su sada ZASEBNE kartice na home (ispod
+    // Zaglavlja) — vidi renderOkolnostiCard/renderIzuzetiCard; ovdje se preskaču.
+    if (f.id === "izuzeti_uzorci") continue;
     if (f.id === "okolnosti_label") continue;
-    // Okolnosti/Uviđaj → kompaktno dugme koje otvara fokus-prozor
-    if (f.id === "okolnosti") {
-      body.appendChild(buildOkolnostiOpener());
-      continue;
-    }
+    if (f.id === "okolnosti") continue;
     const wrap = document.createElement("div");
     wrap.className = "field";
     const label = document.createElement("label");
@@ -1085,14 +1190,9 @@ function renderHeaderForm() {
     });
   });
 
-  // Switch "Uviđaj" — ručni prelaz: naredba (Claude) ↔ lični uviđaj (zaključan)
-  // Okolnosti/Uviđaj — dugme koje otvara fokus-prozor
-  const okOpen = body.querySelector("#btn-okolnosti-open");
-  if (okOpen) okOpen.addEventListener("click", openOkolnostiOverlay);
-
-  // Izuzeti uzorci — dugme koje otvara fokus-prozor sa check-listom
-  const izOpen = body.querySelector("#btn-izuzeti-open");
-  if (izOpen) izOpen.addEventListener("click", openIzuzetiOverlay);
+  // Okolnosti i Izuzeti uzorci → zasebne kartice na home (renderuju se ispod)
+  renderOkolnostiCard();
+  renderIzuzetiCard();
 
   // Extract naredba — dvije direktne ikone (kamera / fajl), bez među-izbornika
   const camBtn = $("#btn-naredba-camera");
