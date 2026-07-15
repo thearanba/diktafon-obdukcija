@@ -123,7 +123,11 @@ def claude_messages(api_key: str, model: str, system, messages: list,
     except OSError as e:
         raise ApiError(0, f"Mrežna greška (Anthropic): {e}")
 
-    obj = json.loads(body)
+    try:
+        obj = json.loads(body)
+    except (ValueError, json.JSONDecodeError):
+        # Ne-JSON odgovor (captive portal / proxy HTML) — jasna poruka umjesto sirovog stack-a
+        raise ApiError(502, "Neočekivan odgovor servisa (provjeri mrežu / captive portal).")
     # Spoji sve text blokove iz content niza
     parts = []
     for block in obj.get("content", []):
@@ -134,6 +138,9 @@ def claude_messages(api_key: str, model: str, system, messages: list,
     usage = obj.get("usage", {}) or {}
     return {
         "text": text,
+        # Signal da je odgovor ODSJEČEN (max_tokens) — pozivalac može upozoriti korisnika
+        # da kraj teksta nedostaje (inače truncirani paragraf izgleda kao legitiman unos).
+        "truncated": obj.get("stop_reason") == "max_tokens",
         "usage": {
             "input_tokens": usage.get("input_tokens", 0),
             "output_tokens": usage.get("output_tokens", 0),

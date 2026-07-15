@@ -185,6 +185,17 @@ def remove_learned_correction(pattern: str):
         _save_json(LEARNED_PATH, learned)
 
 
+def _case_preserving_repl(replacement: str):
+    """Zamjena koja čuva veliko početno slovo originala — inače IGNORECASE + lowercase
+    zamjena („Truležno"→„truležno") obara kapitalizaciju na počecima rečenica."""
+    def _repl(m):
+        matched = m.group(0)
+        if matched[:1].isupper() and replacement[:1].islower():
+            return replacement[:1].upper() + replacement[1:]
+        return replacement
+    return _repl
+
+
 def apply_corrections(text: str) -> str:
     """Primijeni sve korekcije (builtin + learned) na transkript."""
     if not text:
@@ -193,7 +204,7 @@ def apply_corrections(text: str) -> str:
     # Builtin prvo, onda learned (learned može override builtin)
     for pattern, replacement in {**BUILTIN_CORRECTIONS, **learned}.items():
         try:
-            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+            text = re.sub(pattern, _case_preserving_repl(replacement), text, flags=re.IGNORECASE)
         except re.error as e:
             print(f"[corrections] Loš regex {pattern!r}: {e}")
     return text
@@ -256,6 +267,30 @@ def diff_words(original: str, edited: str) -> list[Tuple[str, str]]:
     return diffs
 
 
+# Riječi čija bi automatska zamjena promijenila KLINIČKI/PRAVNI smisao —
+# NIKAD se ne uče (strana povrede, pozicija, negacija, brojevi/mjere). Doktor je
+# u konkretnoj rečenici ispravio 'lijeve'→'desne' iz stvarnog razloga; globalno
+# pravilo bi tu ispravku primijenilo na SVE buduće transkripte → pogrešna strana.
+_SENSITIVE_WORDS = {
+    "lijevo", "lijeva", "lijevi", "lijeve", "lijevu", "lijevog", "lijevom", "lijevoj", "ljevo",
+    "desno", "desna", "desni", "desne", "desnu", "desnog", "desnom", "desnoj",
+    "gore", "gornji", "gornja", "gornje", "gornjem", "dolje", "donji", "donja", "donje", "donjem",
+    "iznad", "ispod", "prednji", "prednja", "prednje", "stražnji", "stražnja", "zadnji", "zadnja",
+    "unutrašnji", "unutrašnja", "unutrašnje", "vanjski", "vanjska", "spoljašnji", "spoljašnja",
+    "medijalno", "lateralno", "proksimalno", "distalno", "kranijalno", "kaudalno", "ventralno", "dorzalno",
+    "bez", "sa", "ne", "nije", "nema", "ima",
+    "jedan", "jedna", "dva", "dvije", "tri", "četiri", "pet",
+}
+
+
+def _is_sensitive_swap(before: str, after: str) -> bool:
+    b = before.lower().strip()
+    a = after.lower().strip()
+    if re.search(r"\d", b) or re.search(r"\d", a):  # cifre (mjere, dob, broj rebra…)
+        return True
+    return b in _SENSITIVE_WORDS or a in _SENSITIVE_WORDS
+
+
 def log_correction(original: str, edited: str) -> list[dict]:
     """Loguj razlike između original i edited transkripta.
     Vraća listu novonaučenih korekcija (ako je par sad dostigao prag)."""
@@ -280,6 +315,9 @@ def log_correction(original: str, edited: str) -> list[dict]:
             continue
         # Preskoči ako je razlika prevelika (vjerovatno nije tipfeler)
         if abs(len(before) - len(after)) > max(3, len(before) // 2):
+            continue
+        # Klinički/pravno osjetljive zamjene (strana, pozicija, broj) se NE uče automatski
+        if _is_sensitive_swap(before, after):
             continue
 
         key = f"{before}|{after}"

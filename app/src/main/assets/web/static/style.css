@@ -420,21 +420,17 @@ html, body {
   color: var(--text-dim);
   font-weight: 400;
 }
-/* Zaglavlje/Okolnosti/Izuzeti kartica: NASLOV je fiksan, meta-snippet se skraćuje (…)
-   — inače dug tekst (stari slučajevi) istisne naslov iz reda */
-#header-card .card-header .card-title,
-#okolnosti-card .card-header .card-title,
-#izuzeti-card .card-header .card-title { flex: 0 0 auto; max-width: 55%; }
-#header-card .card-header .card-meta,
-#okolnosti-card .card-header .card-meta,
-#izuzeti-card .card-header .card-meta {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: right;
+/* Zaglavlje/Okolnosti/Izuzeti kartica: meta-snippet je DRUGI RED ispod naslova
+   (sitnije, dim), skraćuje se (…) — kao (zagrada) kod sekcija. */
+#header-card .card-header .card-meta.ct-sub,
+#okolnosti-card .card-header .card-meta.ct-sub,
+#izuzeti-card .card-header .card-meta.ct-sub {
+  display: block;
+  text-align: left;
 }
+#header-card .card-header .card-meta.ct-sub:empty,
+#okolnosti-card .card-header .card-meta.ct-sub:empty,
+#izuzeti-card .card-header .card-meta.ct-sub:empty { display: none; }
 .caret {
   display: inline-block;
   transition: transform 0.15s;
