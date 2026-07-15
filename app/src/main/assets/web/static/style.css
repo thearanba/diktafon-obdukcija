@@ -113,18 +113,6 @@ html, body {
 .topbar-menu button:hover, .topbar-menu button:active { background: var(--border); }
 .topbar-menu .menu-danger { color: #fca5a5; }
 .topbar-menu .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
-
-.draft-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .draft-indicator.dim, #draft-name-indicator.dim {
   color: var(--text-dim);
   font-style: italic;
@@ -320,40 +308,6 @@ html, body {
   from { transform: translate(-50%, -20px); opacity: 0; }
   to { transform: translate(-50%, 0); opacity: 1; }
 }
-
-.conflict-icon {
-  font-size: 22px;
-  flex-shrink: 0;
-}
-.conflict-text {
-  flex: 1;
-  font-size: 14px;
-  line-height: 1.4;
-  min-width: 200px;
-}
-.conflict-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.btn-conflict-load, .btn-conflict-keep {
-  background: #fff;
-  color: #92400e;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.btn-conflict-load:hover { background: #f3f4f6; }
-.btn-conflict-keep {
-  background: transparent;
-  color: white;
-  border: 1px solid white;
-}
-.btn-conflict-keep:hover { background: rgba(255,255,255,0.1); }
 
 /* Local-only draft badge */
 .draft-row .local-only-badge {
@@ -695,28 +649,6 @@ body.has-fullscreen { overflow: hidden; }
 .card.fullscreen .ct-sub { display: none; }
 
 /* Naslov sekcije + sažetak (dva reda) */
-.section-head {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.section-head .card-title {
-  flex: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.card-summary {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.card-summary:empty { display: none; }
 
 /* Grupni razdjelnici u listi sekcija (Spoljašnji / Unutrašnji / Mišljenje) */
 .group-divider {
@@ -730,45 +662,7 @@ body.has-fullscreen { overflow: hidden; }
 #sections-container > .group-divider:first-child { padding-top: 8px; }
 
 /* Auto-popuni iz naredbe */
-.extract-naredba-box {
-  background: rgba(245, 134, 52, 0.08);
-  border: 1px dashed var(--primary);
-  border-radius: 10px;
-  padding: 14px;
-  margin-bottom: 16px;
-  text-align: center;
-}
-.btn-extract-naredba {
-  background: var(--primary);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 14px 18px;
-  font-size: 15px;
-  font-weight: 600;
-  width: 100%;
-  min-height: 48px;
-  cursor: pointer;
-}
-.btn-extract-naredba:hover { background: var(--primary-h); }
-.btn-extract-naredba:disabled { opacity: 0.6; cursor: not-allowed; }
 /* Auto-popuni: dvije direktne ikone (kamera / fajl) */
-.extract-label { font-weight: 600; margin-bottom: 8px; }
-.extract-buttons { display: flex; gap: 8px; }
-.btn-extract-icon {
-  flex: 1;
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  min-height: 46px;
-  cursor: pointer;
-}
-.btn-extract-icon:hover, .btn-extract-icon:active { background: var(--primary-h); }
-.btn-extract-icon:disabled { opacity: 0.6; }
 .extract-hint {
   font-size: 12px;
   color: var(--text-dim);
@@ -831,7 +725,6 @@ body.has-fullscreen { overflow: hidden; }
 }
 #btn-izuzeti-sazmi { width: 100%; margin-top: 4px; }
 /* Razmak: odvoji „Izuzeti uzorci" dugme od gornjih kontrola (Diktiraj/Doradi) */
-.izuzeti-opener-field { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px; }
 
 /* Kompaktno dugme „Izuzeti uzorci" u zaglavlju */
 .btn-izuzeti-open {
@@ -852,49 +745,7 @@ body.has-fullscreen { overflow: hidden; }
 .izuzeti-count { color: var(--primary); font-size: 13px; font-weight: 600; }
 
 /* Fokus-prozor (fullscreen overlay) — npr. za Izuzete uzorke */
-.fs-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 400;
-  background: var(--bg);
-  overflow-y: auto;
-  animation: fadeIn 0.15s ease-out;   /* nježno otvaranje fokus-prozora */
-}
-.fs-overlay-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 14px;
-}
-.fs-overlay-title { font-weight: 700; font-size: 16px; }
-.fs-overlay-close {
-  background: transparent;
-  border: none;
-  color: var(--text);
-  font-size: 22px;
-  width: 40px;
-  height: 40px;
-  cursor: pointer;
-}
-.fs-overlay-body { padding: 14px 14px 40vh 14px; }
 /* Okolnosti/Uviđaj prozor — donja traka (mikrofon + Doradi), kao kod sekcija */
-.okolnosti-actionbar {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  gap: 10px;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 14px rgba(0,0,0,0.4);
-}
-.okolnosti-actionbar .btn-mic,
-.okolnosti-actionbar .btn-cleanup { flex: 1; min-height: 48px; }
 
 /* Switch "Uviđaj" (naredba ↔ lični uviđaj) */
 .uvidjaj-switch {
@@ -1181,22 +1032,6 @@ body.has-fullscreen { overflow: hidden; }
   min-width: 80px;
 }
 
-.btn-add-item {
-  background: transparent;
-  border: 2px dashed var(--border);
-  color: var(--primary);
-  padding: 14px;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  width: 100%;
-  cursor: pointer;
-}
-.btn-add-item:hover {
-  background: rgba(245, 134, 52, 0.1);
-  border-color: var(--primary);
-}
-
 .dict-hint {
   font-size: 12px;
   color: var(--text-dim);
@@ -1329,20 +1164,6 @@ button {
 }
 
 /* Action bar — kompaktan, sticky pod topbar-om */
-.actions {
-  position: sticky;
-  top: 48px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 6px 8px;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  z-index: 9;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  margin: -12px -12px 10px -12px;
-  align-items: stretch;
-}
 .btn-primary {
   background: var(--primary);
   color: white;
@@ -1362,18 +1183,6 @@ button {
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 8px 10px;
-  border-radius: 7px;
-  font-size: 13px;
-  min-height: 40px;
-  flex: 0 0 auto;
-  min-width: 0;
-  white-space: nowrap;
-}
-.btn-danger {
-  background: transparent;
-  color: var(--danger);
-  border: 1px solid var(--danger);
   padding: 8px 10px;
   border-radius: 7px;
   font-size: 13px;
@@ -1484,7 +1293,6 @@ body.has-fullscreen .toast {
 /* Mobile: kompaktna dugmad (manji padding, font, min sizes) */
 @media (max-width: 480px) {
   /* Action bar gore */
-  .actions { padding: 5px 6px; gap: 5px; }
   .btn-primary {
     padding: 9px 8px;
     font-size: 13px;
@@ -1496,9 +1304,6 @@ body.has-fullscreen .toast {
     min-height: 38px;
     min-width: 42px;
   }
-  .btn-secondary .btn-label,
-  .btn-danger .btn-label { display: none; }
-  .btn-primary .btn-label { display: inline; }
 
   /* Sekcijska dugmad (Diktiraj, Spoji, Doradi, ...) */
   .dict-controls { gap: 5px; margin-top: 8px; }
@@ -1571,11 +1376,8 @@ body.has-fullscreen .toast {
   .draft-badge { font-size: 9px; padding: 2px 5px; }
 
   /* + Dodaj povredu/prelom */
-  .btn-add-item { padding: 11px; font-size: 13px; }
 
   /* Extract naredba */
-  .extract-naredba-box { padding: 10px; margin-bottom: 12px; }
-  .btn-extract-naredba { padding: 11px 14px; font-size: 14px; min-height: 44px; }
   .extract-hint { font-size: 11px; }
 
   /* Quick fill (Danas, Adnan, Džejla) */
@@ -1587,8 +1389,6 @@ body.has-fullscreen .toast {
 
   /* Conflict banner */
   .conflict-banner { padding: 10px 12px; gap: 8px; }
-  .conflict-text { font-size: 13px; min-width: 150px; }
-  .btn-conflict-load, .btn-conflict-keep { padding: 7px 11px; font-size: 12px; }
 
   /* Form fields */
   .field { margin-bottom: 10px; }
