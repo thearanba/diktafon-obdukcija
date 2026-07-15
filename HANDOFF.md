@@ -1,32 +1,71 @@
 # Diktafon obdukcija — HANDOFF (nastavak u novoj sesiji)
 
 > Samostalan pregled stanja projekta da se rad nastavi bez gubitka konteksta.
-> **AKTIVNO STANJE: v2 (vidi ispod). Datum zadnjeg rada: 06.07.2026.**
+> **AKTIVNO STANJE: v2 + nermin (obje aktivne). Datum zadnjeg rada: 15.07.2026.**
 > Istorijski dio (sekcije 1–7, v1) ostaje netaknut kao referenca ispod ovog bloka.
 
 ---
 
-# 🟢 GRANA `nermin` — Diktafon Nermin (zasebna app, dodano 08.07.2026)
+# 📌 SESIJA 15.07.2026 — čitati PRVO (najsvježije)
 
-**Treća aplikacija** pored v1/v2 — verzija za **prof. dr. Nermina Sarajlića**. Grananje od `v2`.
-- **Grana:** `nermin` · **applicationId:** `ba.forenzika.diktafon.nermin` · **app ime:** „Diktafon Nermin" ·
-  **workflow:** `build-nermin.yml` (trigger grana `nermin`) · **release tag:** `nermin` (prerelease=true) →
-  `releases/tag/nermin` → „Diktafon Nermin.apk". Instalira se PORED v1/v2 (drugi applicationId).
-- **Keystore:** naslijeđen iz v2 (`keystore/debug.keystore` u repou) — isti potpis, instalacija preko postojeće.
-- **Razlika prema v2 = SAMO Nerminov template + identitet** (sve ostalo naslijeđeno iz v2):
-  1. **Template** `assets/pydata/template/Zapisnik opste Obdukcija.docx`: `header2.xml` presađen iz Nerminovog
-     originala (memorandum **Clarendon** bold-italic „STALNI SUDSKI VJEŠTAK / Prof.dr.sc. Nermin Sarajlić /
-     Specijalista" + desno Mob/Fax/E-mail + 2 dekorativne linije, self-contained DrawingML bez media); potpis-blok
-     → „Vještak / Prof. dr. Nermin Sarajlić / Specijalista sudske medicine". **Layout IDENTIČAN v2**
-     (margine, tabela 1951/3377/4703, font Georgia, footer, SVA generatorska sidra, default medicinski tekstovi) —
-     samo memorandum+potpis presađeni. Verifikovano: KORAK 0 sidra prolaze + Word render vjeran Nerminovom.
-  2. **Kod:** `docx_generator.py` obducent-ćelija → „Prof. dr. Nermin Sarajlić" (Pomoćnik obducenta red ZADRŽAN po
-     odluci korisnika); `android_api.py` asistent-prompt (MERGE_SYSTEM_MULTI/SINGLE) → „prof. dr. Nermin Sarajlić".
-- **Kako graditi Nermin template iznova** (ako zatreba): skripta uzima Salih (v2) template kao bazu, zamijeni
-  `word/header2.xml` Nerminovim bytes + potpis-blok (čisti `w14:paraId`/`rsid` da ne kolidiraju). `examples.json`
-  NIJE dirano (standardni medicinski few-shot, isti stil).
-- **Git rad na `nermin`:** `git push origin HEAD:refs/heads/nermin`. Kao i v2 — doc-only izmjene sa `[skip ci]`.
-- **Nerminov original (referenca za template):** `OneDrive\Documents\Desktop\Karović Hasan - T09 0 KTA 0211142 26 - 1.docx`.
+**Grane sinhronizovane s remote-om.** v2 vrh `91a6b86`, nermin vrh `31ed6e8` (isti sadržaj,
+razlika = samo Nerminov template/identitet). Oba builda ✅ success. Radno stablo čisto.
+**SVAKA izmjena ide na OBJE grane:** commit na v2 → push → `git checkout nermin` →
+`cherry-pick <hash>` → push nermin → `git checkout v2`.
+
+## Šta je urađeno ove sesije (sve na v2 + cherry-pick nermin)
+1. **Redizajn — Forensic Medicine DS (tamna varijanta):** amber→brend-orange `#F58634`;
+   charcoal topbar band + narandžasti val; logo Katedre orange obrub; sva Tailwind-plava
+   selekcija→orange; `theme-color`/manifest charcoal. (`370d097`)
+2. **Kartice na home + fullscreen:** Zaglavlje, Okolnosti/Uviđaj, Izuzeti uzorci su sad
+   kartice na home (ispod grupnih razdjelnika) koje se OTVARAJU u fullscreen kao sekcije.
+   Redni brojevi sekcija narandžasti lijevo; naslov-u-zagradi ide u novi red (`.ct-sub`);
+   status pill (finalno/diktat/prazno); meta-snippet u novom redu ispod naslova.
+3. **Jedinstvena donja traka + navigacija:** `#focus-nav` (sekcije) i `#card-fs-nav`
+   (kartice) — ISTI raspored. Lanac `focusOrder()`=[header,okolnosti,izuzeti,...sekcije];
+   `navGo()`/`setNavArrows()` dijele obje trake; `enterAny()` bira karticu vs sekciju.
+   Diktiranje u sve tri kartice: `toggleHeaderMic` (u fokusirano polje), `toggleOkolnostiMic`,
+   `toggleIzuzetiMic` (u ručno polje). Zaglavlje traka: `[📷 Slikaj][🎤][📋 Naredba]`, BEZ pauze.
+4. **Android back:** `window.onAndroidBack` (MainActivity.onBackPressed → evaluateJavascript);
+   zatvara dlg-overlay/modal/fokus/karticu/akordeon; UVIJEK vraća true (back NIKAD ne obara app).
+5. **Preimenovanja (sections.py):** `s3_povrede`="3. Povrede", `s6_jezik`="6. Vrat",
+   `s8_srce`="8. Srce i aorta". (id-ovi NEPROMIJENJENI — drafti ih čuvaju.)
+6. **AUDIT fixevi (`91a6b86`):** snimanje (stop pri izlasku/prelasku, guard dupli tap,
+   dlg-overlay back, generateReport fullscreen, truncation toast); naučene korekcije
+   (crna lista strane/pozicije/brojeva `_SENSITIVE_WORDS`, kapitalizacija `_case_preserving_repl`);
+   robusnost (drafts_list string updatedAt, `_atomic_write_json`, stop_reason truncated flag,
+   ne-JSON poruka, max_tokens 4000); WebView sigurnost (`shouldOverrideUrlLoading` samo
+   appassets host, mic/GPS origin provjere).
+
+## AUDIT BACKLOG — NIJE urađeno (3 agenta, puni izvještaji u transkriptu sesije)
+- **Release potpis umjesto debuggable APK** (Kotlin #2) — `adb run-as` čita sve podatke;
+  ZASEBAN zahvat (mijenja potpis/instalaciju), čeka odluku korisnika.
+- **Mrtvi kod ~250 lin JS + ~150 CSS:** stari `fs-overlay` klaster (`openOkolnostiOverlay`,
+  `buildOkolnostiOpener`, `openIzuzetiOverlay`, `bindOkolnostiOverlay`…), `data-item-mic`/
+  `data-item-merge` bind, konflikt-banner (`showConflictBanner`, `STATE.lastKnownServerTs`),
+  akordeon grana u `data-toggle`, `parseContentDispositionFilename`, `#btn-izuzeti-sazmi` u
+  tijelu. CSS: `.okolnosti-actionbar`, `.extract-naredba-box`, `.btn-izuzeti-open`,
+  `.btn-add-item`, `.actions`, `.caret`, `.conflict-banner`, `@keyframes pulse`… ⚠ `.fs-overlay`
+  CSS NE brisati bez JS (onAndroidBack korak 1 + caretYInTextarea ga referenciraju).
+- **Backend srednje:** header-tabela NEMA sidra (izmijenjen template tiho upiše u pogrešne
+  ćelije — docx_generator `_fill_header_table`); `ep_provjera` ne vidi okolnosti/zaglavlje;
+  MERGE_SYSTEM_MULTI obećava auto-numeraciju koja postoji samo za `misljenje` (numbered);
+  Retry-After ignorisan; HEIC→Anthropic 400.
+- **UX niska:** checkbox Izuzetih pregazi Claude-dorađen tekst (`refreshIzuzetiPreview`→
+  `composeIzuzeti` bezuslovno); „📅 Danas" datum zamrznut u renderu (ponoć); LoginActivity bez
+  rate-limita; biometrija bez CryptoObject.
+
+## Alati/render u OVOJ sesiji (Browser pane MCP je bio ZAGLAVLJEN)
+- **Render app-a bez uređaja:** Edge headless preko PowerShell —
+  `msedge --headless=new --disable-gpu --window-size=412,H --force-device-scale-factor=2
+  --virtual-time-budget=7000 --run-all-compositor-stages-before-draw --screenshot=out.png URL`.
+  Harness (`apppreviewN/`) = kopija `assets/web/` + `harness.js` koji stub-uje `AndroidBridge`
+  (config iz `android_api.ep_config`) i seed-uje STATE; `<script src=harness.js>` PRIJE app.js.
+  PIL za crop screenshotova. Server: `python -m http.server PORT` u harness folderu.
+- **Validacija:** JS `esprima` (scratchpad `check_js.py`, neutralizuje `catch{`/`?.`); CSS
+  brace-count; Python import + funkcijski testovi u venv-u.
+- **JIT gotcha:** `git log v2` je DVOSMISLEN (tag `v2` + grana `v2`) → koristi
+  `git log refs/heads/v2`; push `HEAD:refs/heads/v2`.
 
 ---
 
