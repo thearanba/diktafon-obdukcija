@@ -8,10 +8,20 @@
 
 # 📌 SESIJA 15.07.2026 — čitati PRVO (najsvježije)
 
-**Grane sinhronizovane s remote-om.** v2 vrh `91a6b86`, nermin vrh `31ed6e8` (isti sadržaj,
-razlika = samo Nerminov template/identitet). Oba builda ✅ success. Radno stablo čisto.
-**SVAKA izmjena ide na OBJE grane:** commit na v2 → push → `git checkout nermin` →
-`cherry-pick <hash>` → push nermin → `git checkout v2`.
+**Grane sinhronizovane s remote-om.** v2 vrh `16abd3d`, nermin vrh `c07d2bb` (isti sadržaj,
+razlika = samo Nerminov template/identitet + zasebni workflow). Oba builda ✅ success.
+**SVAKA izmjena ide na OBJE grane:** commit na v2 → push → `git checkout -B nermin refs/heads/nermin` →
+`cherry-pick <hash>` → push nermin → `git checkout -B v2 refs/heads/v2`.
+⚠ Cherry-pick NE prenosi izmjene `build-v2.yml` na `build-nermin.yml` — to su različiti
+fajlovi, pa izmjenu CI-ja treba ponoviti ručno (jednom već propušteno).
+
+## ⚠ APK je sada RELEASE (od `b689edb`) — bitno za sljedeću sesiju
+Oba workflow-a grade `assembleRelease` (ne više `assembleDebug`) → **debuggable=false**.
+Potpisuje se ISTIM `keystore/debug.keystore`, pa se nova verzija i dalje instalira PREKO
+postojeće (bez deinstalacije, drafti ostaju). CI ima tvrdu kapiju: `apksigner verify` +
+`aapt2 dump badging | grep application-debuggable` → build pada ako APK nije potpisan ili
+jeste debuggable. **Ne vraćati na assembleDebug** — to bi vratilo `adb run-as` pristup
+draftovima i API ključevima.
 
 ## Šta je urađeno ove sesije (sve na v2 + cherry-pick nermin)
 1. **Redizajn — Forensic Medicine DS (tamna varijanta):** amber→brend-orange `#F58634`;
@@ -37,23 +47,43 @@ razlika = samo Nerminov template/identitet). Oba builda ✅ success. Radno stabl
    ne-JSON poruka, max_tokens 4000); WebView sigurnost (`shouldOverrideUrlLoading` samo
    appassets host, mic/GPS origin provjere).
 
-## AUDIT BACKLOG — NIJE urađeno (3 agenta, puni izvještaji u transkriptu sesije)
-- **Release potpis umjesto debuggable APK** (Kotlin #2) — `adb run-as` čita sve podatke;
-  ZASEBAN zahvat (mijenja potpis/instalaciju), čeka odluku korisnika.
-- **Mrtvi kod ~250 lin JS + ~150 CSS:** stari `fs-overlay` klaster (`openOkolnostiOverlay`,
-  `buildOkolnostiOpener`, `openIzuzetiOverlay`, `bindOkolnostiOverlay`…), `data-item-mic`/
-  `data-item-merge` bind, konflikt-banner (`showConflictBanner`, `STATE.lastKnownServerTs`),
-  akordeon grana u `data-toggle`, `parseContentDispositionFilename`, `#btn-izuzeti-sazmi` u
-  tijelu. CSS: `.okolnosti-actionbar`, `.extract-naredba-box`, `.btn-izuzeti-open`,
-  `.btn-add-item`, `.actions`, `.caret`, `.conflict-banner`, `@keyframes pulse`… ⚠ `.fs-overlay`
-  CSS NE brisati bez JS (onAndroidBack korak 1 + caretYInTextarea ga referenciraju).
-- **Backend srednje:** header-tabela NEMA sidra (izmijenjen template tiho upiše u pogrešne
-  ćelije — docx_generator `_fill_header_table`); `ep_provjera` ne vidi okolnosti/zaglavlje;
-  MERGE_SYSTEM_MULTI obećava auto-numeraciju koja postoji samo za `misljenje` (numbered);
-  Retry-After ignorisan; HEIC→Anthropic 400.
-- **UX niska:** checkbox Izuzetih pregazi Claude-dorađen tekst (`refreshIzuzetiPreview`→
-  `composeIzuzeti` bezuslovno); „📅 Danas" datum zamrznut u renderu (ponoć); LoginActivity bez
-  rate-limita; biometrija bez CryptoObject.
+## AUDIT BACKLOG — ✅ ZATVOREN (sve odrađeno 15.07.2026, commiti `1bb48cc`/`b689edb`/`16abd3d`)
+7. **Sitnice (`1bb48cc`):** Izuzeti checkbox više ne pregazi Claude-dorađen tekst
+   (`composeIzuzetiText` je sad ČISTA funkcija; otisak `STATE.header.izuzeti_auto` razlikuje
+   vlastiti tekst od auto-generisanog; dugme „↻ Osvježi iz selekcije"; stari drafti bez
+   `izuzeti_auto` se tretiraju kao vlastiti = sigurniji default). „📅 Danas" računa datum na
+   klik (`data-fill-today`), ne pri renderu. HEIC → nativna konverzija u JPEG
+   (`AndroidBridge.imageToJpeg`, BitmapFactory dekodira HEIF od API 29, downscale 1568px) +
+   Python `_is_heic` po magic bytes uz jasnu uputu. Retry-After se poštuje (sekunde i HTTP
+   datum) uz cap `MAX_RETRY_WAIT_S=8s`.
+8. **Srednje (`1bb48cc`):** `_fill_header_table` ima SIDRA (`_HEADER_ANCHORS`) — pozicije se
+   razriješe PRIJE ijednog upisa i potvrde tekstom iz template-a; izmijenjen template više ne
+   može tiho razbacati podatke → `ValueError` koja imenuje polje. `ep_provjera` sada prima i
+   `header` (zaglavlje, okolnosti/uviđaj, izuzeti) + 2 nove tačke u promptu.
+   Generator skida postojeću numeraciju prije svoje (`_STRIP_NUM_RE`).
+9. **Sigurnost (`b689edb`):** rate-limit lozinke (`AppLock.lockoutMsFor`, brojač PERZISTIRA);
+   otisak vezan za AndroidKeyStore ključ (`BioCrypto` + `BioSetup`, `setUserAuthenticationRequired`);
+   release APK (vidi blok gore).
+10. **Mrtvi kod (`16abd3d`):** -244 lin JS (12 funkcija), -200 lin CSS (24 klase).
+
+### ⚠ Pouke za sljedeće čišćenje mrtvog koda
+- **Brojanje referenci NE VALJA** — klaster `openOkolnostiOverlay → bindOkolnostiOverlay →
+  openOkolnostiOverlay` je CIKLIČAN i tako izgleda živ. Koristiti **dosežljivost (BFS) od
+  korijena** preko esprima AST-a; skripta: `scratchpad/dead_code3.py` (korijeni = pomen u
+  index.html, `window.X =`, referenca iz top-level koda).
+- Regex-parser za granice funkcija puca (regex literali, komentari) — koristiti AST `range`.
+  Transformacije za esprima (`catch {`, `?.`, `??`) ne smiju mijenjati broj redova.
+- `.fs-overlay` je sada POTPUNO uklonjen (CSS+JS) — nijedan element ga više ne pravi;
+  `onAndroidBack` korak 1 obrisan jer je bio mrtav (Okolnosti/Izuzeti hvataju `fsCardId`).
+- Vizuelna provjera: render prije/poslije Edge headless + PIL `ImageChops` → traži
+  PIKSEL-IDENTIČAN rezultat (postignuto).
+
+## Preostalo (nisko, NIJE hitno)
+- `STATE.lastKnownServerTs` + `hideConflictBanner()` su ostaci konflikt-mehanizma koji nema
+  smisla bez servera. Tehnički su ŽIVI (pozivaju se), pa ih čišćenje traži diranje logike
+  učitavanja draftova — ostavljeno namjerno.
+- ElevenLabs Scribe kao opcioni STT provider (tačniji od Groq Whispera za BHS, ali plaćen) —
+  čeka odluku korisnika.
 
 ## Alati/render u OVOJ sesiji (Browser pane MCP je bio ZAGLAVLJEN)
 - **Render app-a bez uređaja:** Edge headless preko PowerShell —
