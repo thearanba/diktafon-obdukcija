@@ -348,14 +348,22 @@ async function mapPathToCall(path, method, body) {
     case "/api/extract_naredba": {
       // body je FormData: "file"
       const file = body.get("file");
-      const file_b64 = await blobToBase64(file);
+      let file_b64 = await blobToBase64(file);
+      let content_type = (file && file.type) || "";
+      let filename = (file && file.name) || "";
+      // HEIC/HEIF Claude ne prima → pretvori nativno u JPEG (Android dekodira HEIF).
+      if (isHeicFile(content_type, filename)) {
+        const jpeg = await nativeImageToJpeg(file_b64);
+        if (!jpeg) {
+          throw new Error("HEIC sliku nije moguće pretvoriti — slikaj ponovo ili pošalji PDF.");
+        }
+        file_b64 = jpeg;
+        content_type = "image/jpeg";
+        filename = filename.replace(/\.(heic|heif)$/i, ".jpg") || "naredba.jpg";
+      }
       return {
         endpoint: "extract_naredba",
-        payload: {
-          file_b64,
-          content_type: (file && file.type) || "",
-          filename: (file && file.name) || "",
-        },
+        payload: { file_b64, content_type, filename },
       };
     }
   }
@@ -390,6 +398,35 @@ function nativeCall(endpoint, payload) {
     } catch (e) {
       delete window.__nativePending[reqId];
       reject(e);
+    }
+  });
+}
+
+// Samsung kamera zna snimati u HEIC; Claude prima samo jpeg/png/gif/webp.
+// Neki Android-i za HEIC ne prijave MIME uopšte → gledamo i ekstenziju.
+function isHeicFile(contentType, filename) {
+  const ct = (contentType || "").toLowerCase();
+  const fn = (filename || "").toLowerCase();
+  return ct.includes("heic") || ct.includes("heif") || /\.(heic|heif)$/.test(fn);
+}
+
+// Nativna konverzija slike u JPEG preko Androidа (WebView ne dekodira HEIC).
+// Vraća base64 JPEG-a ili "" ako most nije dostupan / dekodiranje padne.
+function nativeImageToJpeg(b64) {
+  return new Promise((resolve) => {
+    if (!window.AndroidBridge || typeof AndroidBridge.imageToJpeg !== "function") {
+      resolve(""); return;
+    }
+    const reqId = "img" + (++window.__nativeSeq) + "_" + Math.floor(performance.now());
+    window.__nativePending[reqId] = {
+      resolve: (obj) => resolve((obj && obj.jpeg_b64) || ""),
+      reject: () => resolve(""),
+    };
+    try {
+      AndroidBridge.imageToJpeg(reqId, b64);
+    } catch (e) {
+      delete window.__nativePending[reqId];
+      resolve("");
     }
   });
 }
@@ -506,6 +543,10 @@ const DEFAULT_IZUZETI_SENTENCE = "Tokom obdukcije izuzeti uzorci: papilarnih lin
   "uzorak krvi za DNA te uzorci krvi, očne vodice, urina, žući i želučanog sadržaja za " +
   "analizu na alkohol i psihoaktivne supstance. Svi uzorci predani krim-tehničaru na dalje postupanje.";
 
+// Šta generator upiše kad ništa nije izabrano — prikazuje se kao placeholder
+// (ne kao vrijednost, da prazan draft ne izgleda kao da ima sadržaj).
+const IZUZETI_NONE_SENTENCE = "Nisu izuzeti uzorci za dodatne pretrage.";
+
 function izuzetiInitState() {
   // Novi/prazan nalaz → NIJEDAN uzorak nije selektovan (korisnik bira šta je izuzeto)
   if (!STATE.header.izuzeti_checked) STATE.header.izuzeti_checked = {};
@@ -516,6 +557,7 @@ function izuzetiResetDefaults() {
   STATE.header.izuzeti_checked = {};
   STATE.header.izuzeti_manual = {};
   STATE.header.izuzeti_uzorci = "";
+  STATE.header.izuzeti_auto = "";
 }
 
 function izuzetiCollect(g) {
@@ -525,8 +567,10 @@ function izuzetiCollect(g) {
   return items;
 }
 
-// Deterministički sastavi tekst iz selekcije (osnova; Claude ga može doraditi)
-function composeIzuzeti() {
+// Deterministički sastavi tekst iz selekcije — ČISTA funkcija, ne dira STATE.
+// Upis u state je namjerno odvojen (izuzetiSyncAuto) da Claude-dorađen ili ručno
+// uređen tekst ne bude tiho pregažen pri svakom kliku na checkbox.
+function composeIzuzetiText() {
   const g0 = izuzetiCollect(IZUZETI_GROUPS[0]);
   const g1 = izuzetiCollect(IZUZETI_GROUPS[1]);
   const g2 = izuzetiCollect(IZUZETI_GROUPS[2]);
@@ -534,13 +578,28 @@ function composeIzuzeti() {
   if (g0.length) segs.push("Tokom obdukcije izuzeti uzorci: " + g0.join(", "));
   if (g1.length) segs.push((segs.length ? "za toksikološku analizu izuzeti: " : "Za toksikološku analizu izuzeti: ") + g1.join(", "));
   if (g2.length) segs.push((segs.length ? "za patohistološku analizu izuzeti: " : "Za patohistološku analizu izuzeti: ") + g2.join(", "));
-  let s;
-  if (segs.length) s = segs.join("; ") + ". Svi uzorci predani krim-tehničaru na dalje postupanje.";
-  else s = "Nisu izuzeti uzorci za dodatne pretrage.";
-  // Prazna selekcija → state ostaje "" (da prazan draft NE ispadne „ima sadržaj");
-  // default rečenicu generator svejedno upiše pri praznom izuzeti_uzorci.
-  STATE.header.izuzeti_uzorci = segs.length ? s : "";
+  // Prazna selekcija → "" (da prazan draft NE ispadne „ima sadržaj"); default
+  // rečenicu generator svejedno upiše pri praznom izuzeti_uzorci.
+  if (!segs.length) return "";
+  return segs.join("; ") + ". Svi uzorci predani krim-tehničaru na dalje postupanje.";
+}
+
+// Upiši auto-tekst u state i zapamti ga kao „posljednji auto" — po tom otisku se
+// poslije prepoznaje je li tekst u međuvremenu dirao korisnik ili Claude.
+function izuzetiSyncAuto() {
+  const s = composeIzuzetiText();
+  STATE.header.izuzeti_uzorci = s;
+  STATE.header.izuzeti_auto = s;
   return s;
+}
+
+// Tekst je „vlastit" ako se razlikuje od zadnjeg auto-generisanog (✨ Sažmi ili ručna
+// izmjena). Stari drafti nemaju izuzeti_auto → tretiraju se kao vlastiti, što je
+// sigurniji default (radije ne diramo nego da pregazimo tuđi rad).
+function izuzetiIsCustom() {
+  const cur = STATE.header.izuzeti_uzorci || "";
+  if (!cur.trim()) return false;
+  return cur !== (STATE.header.izuzeti_auto || "");
 }
 
 function izuzetiSelectedText() {
@@ -571,17 +630,43 @@ function buildIzuzetiChecklist(f) {
     html += `</div>`;
   }
   html += `<button type="button" class="btn-cleanup" id="btn-izuzeti-sazmi">✨ Sažmi (Claude)</button>`;
+  html += `<button type="button" class="btn-quick btn-izuzeti-osvjezi" id="btn-izuzeti-osvjezi" hidden>↻ Osvježi iz selekcije</button>`;
   html += `<label class="field-label" style="margin-top:10px;">Tekst (ide u zapisnik):</label>`;
-  const composed = STATE.header.izuzeti_uzorci || composeIzuzeti();
-  html += `<textarea class="dict-textarea" id="izuzeti-preview" data-header-id="izuzeti_uzorci">${escapeHtml(composed)}</textarea>`;
+  const composed = STATE.header.izuzeti_uzorci || izuzetiSyncAuto();
+  html += `<textarea class="dict-textarea" id="izuzeti-preview" data-header-id="izuzeti_uzorci" placeholder="${escapeAttr(IZUZETI_NONE_SENTENCE)}">${escapeHtml(composed)}</textarea>`;
   wrap.innerHTML = html;
   return wrap;
 }
 
-function refreshIzuzetiPreview() {
-  const composed = composeIzuzeti();
+// Prikaži „↻ Osvježi" samo dok tekst ne prati selekciju (tj. dok je vlastit)
+function izuzetiMarkStale(on) {
+  const btn = $("#btn-izuzeti-osvjezi");
+  if (btn) btn.hidden = !on;
+}
+
+// Svjesno odbacivanje vlastitog teksta → nazad na auto iz checkboxa
+function izuzetiOsvjezi() {
+  izuzetiSyncAuto();
   const pv = $("#izuzeti-preview");
-  if (pv) { pv.value = STATE.header.izuzeti_uzorci || composed; autoGrow(pv); }
+  if (pv) { pv.value = STATE.header.izuzeti_uzorci; autoGrow(pv); }
+  izuzetiMarkStale(false);
+  if (typeof updateIzuzetiCardMeta === "function") updateIzuzetiCardMeta();
+  updateHeaderSummary();
+  autoSave();
+  toast("Tekst osvježen iz selekcije");
+}
+
+function refreshIzuzetiPreview() {
+  if (izuzetiIsCustom()) {
+    // Tekst je Claude-dorađen ili ručno pisan — NE pregazimo ga zbog klika na checkbox;
+    // samo ponudimo „↻ Osvježi" ako korisnik ipak želi auto-verziju.
+    izuzetiMarkStale(true);
+  } else {
+    izuzetiSyncAuto();
+    const pv = $("#izuzeti-preview");
+    if (pv) { pv.value = STATE.header.izuzeti_uzorci; autoGrow(pv); }
+    izuzetiMarkStale(false);
+  }
   if (typeof updateIzuzetiCardMeta === "function") updateIzuzetiCardMeta();  // home meta odmah svjež
   updateHeaderSummary();
   autoSave();
@@ -590,7 +675,7 @@ function refreshIzuzetiPreview() {
 async function sazmiIzuzeti(btn) {
   if (!STATE.config.claude_available) { toast("Claude nije konfigurisan", "error"); return; }
   // SAMO izabrano (deterministički), pa Claude SREDI (ne dodaje ništa — npr. ne dodaje DNA sam)
-  const composed = composeIzuzeti();
+  const composed = composeIzuzetiText();
   if (!composed.trim()) { toast("Nijedan uzorak nije izabran"); return; }
   const old = btn.textContent;
   btn.disabled = true;
@@ -602,8 +687,11 @@ async function sazmiIzuzeti(btn) {
       body: JSON.stringify({ text: composed, section_title: "Izuzeti uzorci" }),
     });
     STATE.header.izuzeti_uzorci = (res.text || "").trim();
+    // izuzeti_auto NAMJERNO ostaje stari → tekst je sad „vlastit" pa ga klik na
+    // checkbox više neće pregaziti (nudi se „↻ Osvježi").
     const pv = $("#izuzeti-preview");
     if (pv) { pv.value = STATE.header.izuzeti_uzorci; autoGrow(pv); }
+    izuzetiMarkStale(izuzetiIsCustom());
     updateHeaderSummary();
     autoSave();
     toast("Sažeto ✓", "success");
@@ -650,10 +738,16 @@ function bindIzuzetiEvents(scope) {
   });
   const sazmiBtn = scope.querySelector("#btn-izuzeti-sazmi");
   if (sazmiBtn) sazmiBtn.addEventListener("click", () => sazmiIzuzeti(sazmiBtn));
+  const osvjeziBtn = scope.querySelector("#btn-izuzeti-osvjezi");
+  if (osvjeziBtn) {
+    osvjeziBtn.hidden = !izuzetiIsCustom();
+    osvjeziBtn.addEventListener("click", () => izuzetiOsvjezi());
+  }
   const pv = scope.querySelector("#izuzeti-preview");
   if (pv) {
     pv.addEventListener("input", () => {
       STATE.header.izuzeti_uzorci = pv.value;
+      izuzetiMarkStale(izuzetiIsCustom());
       autoGrow(pv);
       autoSave();
     });
@@ -1304,7 +1398,9 @@ function renderHeaderForm() {
         btn.className = "btn-quick";
         btn.textContent = "📅 Danas";
         btn.dataset.fillField = f.id;
-        btn.dataset.fillValue = formatDateToday();
+        // Datum se računa TEK na klik — inače ostane zamrznut na trenutak iscrtavanja
+        // (app otvoren preko ponoći → „Danas" upiše jučerašnji datum).
+        btn.dataset.fillToday = "1";
         quickWrap.appendChild(btn);
       }
       if (f.quick_options) {
@@ -1337,7 +1433,7 @@ function renderHeaderForm() {
   body.querySelectorAll("[data-fill-field]").forEach(btn => {
     btn.addEventListener("click", e => {
       const fid = btn.dataset.fillField;
-      const value = btn.dataset.fillValue;
+      const value = btn.dataset.fillToday ? formatDateToday() : btn.dataset.fillValue;
       STATE.header[fid] = value;
       const inp = body.querySelector(`[data-header-id="${fid}"]`);
       if (inp) inp.value = value;
@@ -2992,12 +3088,26 @@ async function provjeriZapisnik() {
   if (!STATE.config.claude_available) { toast("Claude nije konfigurisan", "error"); return; }
   flushAutoSave();
   const flat = collectFlatSections();
-  if (!Object.keys(flat).length) { toast("Nema sadržaja za provjeru"); return; }
+  // Zaglavlje i okolnosti idu na provjeru zajedno sa sekcijama — nedosljednost
+  // (datum uviđaja poslije obdukcije, uzorci koje mišljenje traži a nisu izuzeti)
+  // je jednako greška kao i ona unutar sekcije.
+  const hdr = {
+    ime_prezime: STATE.header.ime_prezime || "",
+    rodjen: STATE.header.rodjen || "",
+    pronadjen: STATE.header.pronadjen || "",
+    datum_obdukcije: STATE.header.datum_obdukcije || "",
+    okolnosti_label: STATE.header.okolnosti_label || "Okolnosti slučaja",
+    okolnosti: STATE.header.okolnosti || "",
+    izuzeti_uzorci: STATE.header.izuzeti_uzorci || "",
+  };
+  const imaHdr = Object.values(hdr).some(v => (v || "").trim() && v !== "Okolnosti slučaja");
+  if (!Object.keys(flat).length && !imaHdr) { toast("Nema sadržaja za provjeru"); return; }
   provjeraRunning = true;
   toast("🔎 Provjeravam zapisnik…");
   try {
     const res = await nativeCall("provjera", {
       sections: flat,
+      header: hdr,
       case_context: caseContext(),
     });
     if (res && res.__error) throw new Error(res.detail || ("status " + res.status));

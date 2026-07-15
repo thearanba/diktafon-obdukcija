@@ -137,6 +137,19 @@ def is_whisper_phantom(text: str) -> bool:
     return (not n) or (n in _PHANTOM_NORM_SET)
 
 
+def _is_heic(data: bytes, media_type: str = "", filename: str = "") -> bool:
+    """HEIC/HEIF prepoznavanje. Android za HEIC zna ne prijaviti MIME ni ekstenziju,
+    pa gledamo i sam sadržaj: ISO-BMFF 'ftyp' brand na bajtovima 4–12."""
+    if "heic" in media_type or "heif" in media_type:
+        return True
+    if filename.endswith((".heic", ".heif")):
+        return True
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        return data[8:12] in (b"heic", b"heix", b"heim", b"heis",
+                              b"hevc", b"hevx", b"mif1", b"msf1")
+    return False
+
+
 def select_examples(section_id: str, count: int = 4) -> list:
     pool = EXAMPLES_BY_SECTION.get(section_id, [])
     if not pool:
@@ -190,7 +203,7 @@ MERGE_SYSTEM_MULTI = (
     "oblike i padeže s njima.\n"
     "7. FORMAT ODGOVORA (OBAVEZNO): vrati sređene stavke (svaka u svom redu) ISKLJUČIVO "
     "unutar oznaka <izlaz> i </izlaz>. Bez ijedne riječi objašnjenja, komentara, napomene, "
-    "markdown-a, navodnika, i bez '1.', '2.' numeracije (dodaje se automatski). Ništa "
+    "markdown-a, navodnika, i bez '1.', '2.' numeracije na početku stavki. Ništa "
     "izvan oznaka.\n"
     "Primjer: <izlaz>Oguljotina kože desne podlaktice, veličine 3 × 2 cm.\n"
     "Krvni podljev lijevog nadlakta, ljubičaste boje.</izlaz>"
@@ -242,7 +255,8 @@ MERGE_SYSTEM_SINGLE = (
 
 PROVJERA_SYSTEM = (
     "Ti si pažljivi kontrolor obdukcionih zapisnika sudske medicine u BiH. Dobijaš "
-    "KOMPLETAN nalaz (sve sekcije) i kontekst slučaja. NIŠTA ne mijenjaš i ne prepravljaš — "
+    "KOMPLETAN zapisnik (podaci zaglavlja, okolnosti/uviđaj, izuzeti uzorci i sve sekcije) "
+    "i kontekst slučaja. NIŠTA ne mijenjaš i ne prepravljaš — "
     "vraćaš SAMO listu konkretnih upozorenja, jedno po redu, format: 'SEKCIJA — problem'.\n"
     "Tražiš ISKLJUČIVO:\n"
     "1. Rodno nesklađene oblike u odnosu na pol iz konteksta (muški/ženski leš, "
@@ -255,18 +269,22 @@ PROVJERA_SYSTEM = (
     "5. Mišljenje koje pominje povredu/nalaz kojeg NEMA u sekcijama nalaza, ili tešku "
     "povredu iz nalaza koja očito nedostaje u mišljenju.\n"
     "6. Nesklad dobi/datuma sa kontekstom.\n"
+    "7. Okolnosti/uviđaj iz zaglavlja koje protivrječe nalazu (npr. okolnosti govore o "
+    "padu s visine ili vatrenom oružju, a nalaz ne opisuje nijednu odgovarajuću povredu; "
+    "datum uviđaja/pronalaska poslije datuma obdukcije).\n"
+    "8. Izuzeti uzorci koji ne prate nalaz: mišljenje ili dodatne pretrage se pozivaju na "
+    "toksikologiju/patohistologiju/DNA, a ti uzorci nisu izuzeti — ili obrnuto.\n"
     "NE komentariši stil, NE predlaži formulacije, NE izmišljaj probleme. Ako je sve "
     "uredno, vrati tačno: 'Nema uočenih nedosljednosti.'"
 )
 
 
 def ep_provjera(payload):
-    """Provjera konzistentnosti CIJELOG nalaza — vraća listu upozorenja, ništa ne mijenja."""
+    """Provjera konzistentnosti CIJELOG zapisnika — vraća listu upozorenja, ništa ne mijenja."""
     if not ANTHROPIC_API_KEY:
         raise ApiError(400, "Anthropic API ključ nije postavljen.")
     sections = payload.get("sections") or {}
-    if not sections:
-        raise ApiError(400, "Nema sadržaja za provjeru.")
+    header = payload.get("header") or {}
     titles = {s["id"]: s["title"] for s in DICTATION_SECTIONS}
     blocks = []
     for s in DICTATION_SECTIONS:  # redoslijed zapisnika, ne dict-a
@@ -274,8 +292,30 @@ def ep_provjera(payload):
         txt = (sections.get(sid) or "").strip()
         if txt:
             blocks.append(f"== {titles.get(sid, sid)} ==\n{txt}")
+
+    # Zaglavlje i okolnosti su dio zapisnika jednako kao sekcije — dosad ih provjera
+    # nije vidjela, pa je npr. datum uviđaja poslije obdukcije prolazio nezapaženo.
+    hdr_blocks = []
+    ident = []
+    for lbl, key in (("Ime i prezime", "ime_prezime"), ("Rođen/a", "rodjen"),
+                     ("Pronađen/preminuo", "pronadjen"), ("Obdukovan/a", "datum_obdukcije")):
+        v = (header.get(key) or "").strip()
+        if v:
+            ident.append(f"{lbl}: {v}")
+    if ident:
+        hdr_blocks.append("== Podaci zaglavlja ==\n" + "\n".join(ident))
+    okolnosti = (header.get("okolnosti") or "").strip()
+    if okolnosti:
+        ok_label = (header.get("okolnosti_label") or "Okolnosti slučaja").strip()
+        hdr_blocks.append(f"== {ok_label} (zaglavlje) ==\n{okolnosti}")
+    izuzeti = (header.get("izuzeti_uzorci") or "").strip()
+    if izuzeti:
+        hdr_blocks.append(f"== Izuzeti uzorci (zaglavlje) ==\n{izuzeti}")
+
+    if not blocks and not hdr_blocks:
+        raise ApiError(400, "Nema sadržaja za provjeru.")
     ctx_block = _case_context_block(payload.get("case_context"))
-    user_msg = f"{ctx_block}ZAPISNIK PO SEKCIJAMA:\n\n" + "\n\n".join(blocks)
+    user_msg = f"{ctx_block}ZAPISNIK:\n\n" + "\n\n".join(hdr_blocks + blocks)
     result = api_clients.claude_messages(
         ANTHROPIC_API_KEY, CLAUDE_MODEL, PROVJERA_SYSTEM,
         [{"role": "user", "content": user_msg}], max_tokens=1500,
@@ -554,15 +594,25 @@ def ep_extract_naredba(payload):
             "source": {"type": "base64", "media_type": "application/pdf",
                        "data": base64.b64encode(file_bytes).decode("ascii")},
         }
-    elif "image" in media_type or filename.endswith((".jpg", ".jpeg", ".png", ".webp", ".heic")):
+    elif ("image" in media_type
+          or filename.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"))):
+        if _is_heic(file_bytes, media_type, filename):
+            # Klijent HEIC normalno pretvori nativno (AndroidBridge.imageToJpeg); ako je
+            # ipak stigao ovamo, jasna uputa je bolja od golog Anthropic „400".
+            raise ApiError(400, "HEIC slika nije podržana. U Podešavanjima kamere isključi "
+                                "HEIF/HEIC (snimaj u JPEG) pa slikaj ponovo, ili pošalji PDF.")
         if "jpeg" in media_type or filename.endswith((".jpg", ".jpeg")):
             mt = "image/jpeg"
-        elif "png" in media_type:
+        elif "png" in media_type or filename.endswith(".png"):
             mt = "image/png"
-        elif "webp" in media_type:
+        elif "webp" in media_type or filename.endswith(".webp"):
             mt = "image/webp"
+        elif "gif" in media_type or filename.endswith(".gif"):
+            mt = "image/gif"
         else:
-            mt = media_type or "image/jpeg"
+            # Anthropic prima SAMO jpeg/png/gif/webp — proizvoljan media_type bi ionako
+            # pao, pa probamo kao jpeg (najčešći slučaj kad Android ne prijavi MIME).
+            mt = "image/jpeg"
         content_block = {
             "type": "image",
             "source": {"type": "base64", "media_type": mt,

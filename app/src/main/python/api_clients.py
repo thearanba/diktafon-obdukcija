@@ -58,6 +58,43 @@ class ApiError(Exception):
 # Anthropic 529 "overloaded".
 RETRYABLE_STATUSES = (429, 500, 502, 503, 504, 529)
 RETRY_BACKOFF_S = 1.5
+# Duže od ovoga NE čekamo u tišini — vještak bi app doživio kao zamrznut usred
+# obdukcije. Radije jasna greška pa ručno ponavljanje.
+MAX_RETRY_WAIT_S = 8.0
+
+
+def _retry_after_s(e, default_s):
+    """Koliko čekati prije ponovnog pokušaja, po Retry-After headeru servisa.
+
+    Groq/Anthropic pri rate-limitu kažu KOLIKO treba čekati; ignorisati to i odmah
+    ponoviti znači zajamčen drugi 429. Vraća None ako servis traži pauzu dužu od
+    MAX_RETRY_WAIT_S (tada ne ponavljamo — bolje greška nego zamrznut ekran).
+    Podržana su oba oblika: broj sekundi i HTTP datum.
+    """
+    hdrs = getattr(e, "headers", None)
+    ra = hdrs.get("Retry-After") if hdrs else None
+    if not ra:
+        return default_s
+    ra = str(ra).strip()
+    wait = None
+    try:
+        wait = float(ra)
+    except ValueError:
+        try:
+            from email.utils import parsedate_to_datetime
+            from datetime import datetime, timezone
+            dt = parsedate_to_datetime(ra)
+            if dt is not None:
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                wait = (dt - datetime.now(timezone.utc)).total_seconds()
+        except Exception:
+            return default_s
+    if wait is None:
+        return default_s
+    if wait > MAX_RETRY_WAIT_S:
+        return None
+    return max(0.0, wait)
 
 
 def _urlopen_retry(req, timeout):
@@ -73,7 +110,10 @@ def _urlopen_retry(req, timeout):
     except urllib.error.HTTPError as e:
         if e.code not in RETRYABLE_STATUSES:
             raise
-        time.sleep(RETRY_BACKOFF_S)
+        wait = _retry_after_s(e, RETRY_BACKOFF_S)
+        if wait is None:
+            raise
+        time.sleep(wait)
         return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
     except OSError:
         # URLError, socket.timeout/TimeoutError, ConnectionReset... — sve mrežno
