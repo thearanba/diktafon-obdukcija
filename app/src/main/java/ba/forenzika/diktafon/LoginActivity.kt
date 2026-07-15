@@ -92,11 +92,25 @@ class LoginActivity : AppCompatActivity() {
         btnBiometric.setOnClickListener { showBiometricPrompt() }
 
         btnMain.setOnClickListener {
+            val waitMs = lockoutRemainingMs()
+            if (waitMs > 0) {
+                toast(getString(R.string.login_err_lockout, formatWait(waitMs)))
+                return@setOnClickListener
+            }
             if (verifyPassword(etPassword.text.toString())) {
+                clearFailures()
                 maybeOfferBiometric(afterSetup = false)
             } else {
                 etPassword.text.clear()
-                toast(getString(R.string.login_err_wrong))
+                val fails = registerFailure()
+                val nextWait = lockoutRemainingMs()
+                if (nextWait > 0) {
+                    toast(getString(R.string.login_err_lockout, formatWait(nextWait)))
+                } else {
+                    val left = AppLock.FREE_ATTEMPTS - fails
+                    if (left in 1..2) toast(getString(R.string.login_err_wrong_left, left))
+                    else toast(getString(R.string.login_err_wrong))
+                }
             }
         }
 
@@ -123,6 +137,35 @@ class LoginActivity : AppCompatActivity() {
             .apply()
     }
 
+    // === Usporavanje pogađanja lozinke ===
+
+    /** Koliko još traje pauza (0 = slobodno). */
+    private fun lockoutRemainingMs(): Long {
+        val until = prefs.getLong(AppLock.KEY_LOCKOUT_UNTIL, 0L)
+        return (until - System.currentTimeMillis()).coerceAtLeast(0L)
+    }
+
+    /** Zabilježi promašaj i po potrebi postavi pauzu. Vraća ukupan broj promašaja. */
+    private fun registerFailure(): Int {
+        val fails = prefs.getInt(AppLock.KEY_FAILS, 0) + 1
+        val e = prefs.edit().putInt(AppLock.KEY_FAILS, fails)
+        val delay = AppLock.lockoutMsFor(fails)
+        if (delay > 0) e.putLong(AppLock.KEY_LOCKOUT_UNTIL, System.currentTimeMillis() + delay)
+        e.apply()
+        return fails
+    }
+
+    private fun clearFailures() {
+        prefs.edit().remove(AppLock.KEY_FAILS).remove(AppLock.KEY_LOCKOUT_UNTIL).apply()
+    }
+
+    private fun formatWait(ms: Long): String {
+        val total = (ms + 999) / 1000            // zaokruži naviše — „0 s" zbunjuje
+        val min = total / 60
+        val sec = total % 60
+        return if (min > 0) "$min min $sec s" else "$sec s"
+    }
+
     private fun verifyPassword(password: String): Boolean {
         if (password.isEmpty()) return false
         val hashB64 = prefs.getString(AppLock.KEY_HASH, null) ?: return false
@@ -138,22 +181,56 @@ class LoginActivity : AppCompatActivity() {
         BiometricManager.from(this).canAuthenticate(BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
 
+    private fun promptInfo() = BiometricPrompt.PromptInfo.Builder()
+        .setTitle(getString(R.string.app_name))
+        .setSubtitle(getString(R.string.login_bio_subtitle))
+        .setNegativeButtonText(getString(R.string.login_bio_use_password))
+        .setAllowedAuthenticators(BIOMETRIC_STRONG)
+        .build()
+
+    /** Otključavanje otiskom: otisak otključava Keystore ključ kojim se dešifruje marker.
+     *  Nije puka UI potvrda — bez uspješne biometrije Keystore ne da Cipher. */
     private fun showBiometricPrompt() {
+        val blob = prefs.getString(AppLock.KEY_BIO_BLOB, null)
+        val iv = prefs.getString(AppLock.KEY_BIO_IV, null)
+        if (blob.isNullOrEmpty() || iv.isNullOrEmpty()) {
+            // Otisak je bio uključen u ranijoj verziji, gdje je bio samo flag bez ključa.
+            // Isključujemo ga i tražimo ponovno uključivanje — ali korisniku se MORA reći
+            // zašto mu je otisak odjednom nestao.
+            disableBiometric()
+            toast(getString(R.string.login_bio_reenable))
+            return
+        }
+        val cipher = try {
+            BioCrypto.decryptCipher(iv)
+        } catch (_: BioCrypto.InvalidatedException) {
+            // Dodan/uklonjen otisak na uređaju → ključ poništen; lozinka ostaje izlaz
+            disableBiometric()
+            toast(getString(R.string.login_bio_invalidated))
+            return
+        }
         val prompt = BiometricPrompt(
             this, ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    unlock()
+                    val c = result.cryptoObject?.cipher
+                    if (c != null && BioCrypto.verifyMarker(c, blob)) {
+                        clearFailures()
+                        unlock()
+                    } else {
+                        disableBiometric()
+                        toast(getString(R.string.login_bio_invalidated))
+                    }
                 }
                 // Greška/otkaz → korisnik normalno koristi polje za lozinku
             })
-        val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle(getString(R.string.app_name))
-            .setSubtitle(getString(R.string.login_bio_subtitle))
-            .setNegativeButtonText(getString(R.string.login_bio_use_password))
-            .setAllowedAuthenticators(BIOMETRIC_STRONG)
-            .build()
-        prompt.authenticate(info)
+        prompt.authenticate(promptInfo(), BiometricPrompt.CryptoObject(cipher))
+    }
+
+    /** Isključi otisak i počisti ključ — lozinka ostaje jedini put. */
+    private fun disableBiometric() {
+        BioSetup.disable(prefs)
+        btnBiometric.visibility = View.GONE
     }
 
     /** Poslije uspješne lozinke: jednom ponudi uključivanje otiska, pa otključaj. */
@@ -168,8 +245,11 @@ class LoginActivity : AppCompatActivity() {
             .setTitle(getString(R.string.login_bio_offer_title))
             .setMessage(getString(R.string.login_bio_offer_msg))
             .setPositiveButton(getString(R.string.login_bio_offer_yes)) { _, _ ->
-                prefs.edit().putBoolean(AppLock.KEY_BIO_ENABLED, true).apply()
-                unlock()
+                // Ključ se veže za otisak ODMAH — bez toga bi „uključeno" bio samo flag
+                BioSetup.enable(this, prefs) { ok ->
+                    if (!ok) toast(getString(R.string.login_bio_failed))
+                    unlock()
+                }
             }
             .setNegativeButton(getString(R.string.login_bio_offer_no)) { _, _ -> unlock() }
             .setCancelable(false)
@@ -194,6 +274,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun wipeAll() {
+        try { BioCrypto.deleteKey() } catch (_: Exception) {}
         try { prefs.edit().clear().apply() } catch (_: Exception) {}
         try {
             getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE).edit().clear().apply()

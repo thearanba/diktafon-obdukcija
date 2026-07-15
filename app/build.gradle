@@ -25,9 +25,18 @@ android {
     }
 
     signingConfigs {
+        // ISTI ključ za debug i release — namjerno. Potpis mora ostati STABILAN da se nova
+        // verzija instalira PREKO postojeće: drafti su jedini primjerak rada, a promjena
+        // ključa bi tražila deinstalaciju (= gubitak svega neizvezenog).
+        // „debug" je samo ime fajla; sigurnosnu razliku pravi BUILD TIP — release znači
+        // debuggable=false, pa `adb run-as` više ne može čitati drafte i API ključeve.
         debug {
-            // Eksplicitan, STABILAN debug keystore (isti potpis svaki build → instalacija
-            // PREKO postojeće). Fajl generiše/kešira CI; lokalno (AS) se generiše po potrebi.
+            storeFile file("$rootDir/keystore/debug.keystore")
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
             storeFile file("$rootDir/keystore/debug.keystore")
             storePassword 'android'
             keyAlias 'androiddebugkey'
@@ -46,8 +55,15 @@ android {
             }
         }
         release {
+            // Ovo je verzija koja ide na telefon (CI gradi assembleRelease).
+            // debuggable je ovdje false po defaultu — to je cijeli razlog prelaska.
+            // minifyEnabled OSTAJE false: R8 bi mogao pojesti klase koje Chaquopy dohvata
+            // refleksijom, a ušteda na veličini nam ništa ne znači.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (file("$rootDir/keystore/debug.keystore").exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
