@@ -447,7 +447,6 @@ function blobToBase64(blob) {
 
 // === UI helpers ===
 function $(sel) { return document.querySelector(sel); }
-function $$(sel) { return Array.from(document.querySelectorAll(sel)); }
 
 let toastTimer = null;
 function toast(msg, type = "info") {
@@ -602,15 +601,6 @@ function izuzetiIsCustom() {
   return cur !== (STATE.header.izuzeti_auto || "");
 }
 
-function izuzetiSelectedText() {
-  const parts = [];
-  for (const g of IZUZETI_GROUPS) {
-    const items = izuzetiCollect(g);
-    if (items.length) parts.push(g.title + ": " + items.join(", "));
-  }
-  return parts.join(". ");
-}
-
 function buildIzuzetiChecklist(f) {
   izuzetiInitState();
   const wrap = document.createElement("div");
@@ -709,20 +699,6 @@ function countIzuzetiSelected() {
   return n;
 }
 
-// Kompaktno dugme u zaglavlju — otvara check-listu u fokus-prozoru
-function buildIzuzetiOpener() {
-  izuzetiInitState();
-  const wrap = document.createElement("div");
-  wrap.className = "field izuzeti-opener-field";
-  const n = countIzuzetiSelected();
-  wrap.innerHTML = `
-    <button type="button" class="btn-izuzeti-open" id="btn-izuzeti-open">
-      <span>🧪 Izuzeti uzorci</span>
-      <span class="izuzeti-count">${n} izabrano ›</span>
-    </button>`;
-  return wrap;
-}
-
 function bindIzuzetiEvents(scope) {
   scope.querySelectorAll("[data-izuzeti-item]").forEach(cb => {
     cb.addEventListener("change", () => {
@@ -753,27 +729,6 @@ function bindIzuzetiEvents(scope) {
     });
     autoGrow(pv);
   }
-}
-
-function openIzuzetiOverlay() {
-  closeIzuzetiOverlay();
-  const ov = document.createElement("div");
-  ov.className = "fs-overlay";
-  ov.id = "izuzeti-overlay";
-  ov.innerHTML = `
-    <div class="fs-overlay-header">
-      <span class="fs-overlay-title">🧪 Izuzeti uzorci</span>
-      <button class="fs-overlay-close" id="izuzeti-close">✕</button>
-    </div>`;
-  const obody = document.createElement("div");
-  obody.className = "fs-overlay-body";
-  obody.appendChild(buildIzuzetiChecklist({ label: "" }));
-  ov.appendChild(obody);
-  document.body.appendChild(ov);
-  document.body.classList.add("has-fullscreen");
-  bindIzuzetiEvents(ov);
-  const closeBtn = ov.querySelector("#izuzeti-close");
-  if (closeBtn) closeBtn.addEventListener("click", closeIzuzetiOverlay);
 }
 
 function closeIzuzetiOverlay() {
@@ -808,133 +763,6 @@ function buildUvidjajSwitch() {
 function okolnostiSnippet() {
   const txt = (STATE.header.okolnosti || "").trim();
   return txt ? (txt.length > 42 ? txt.slice(0, 42) + "…" : txt) : "(prazno)";
-}
-function buildOkolnostiOpener() {
-  const wrap = document.createElement("div");
-  wrap.className = "field";
-  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
-  wrap.innerHTML = `
-    <button type="button" class="btn-izuzeti-open" id="btn-okolnosti-open">
-      <span>📋 ${escapeHtml(label)}</span>
-      <span class="izuzeti-count">${escapeHtml(okolnostiSnippet())} ›</span>
-    </button>`;
-  return wrap;
-}
-function updateOkolnostiOpener() {
-  const btn = document.getElementById("btn-okolnosti-open");
-  if (!btn) return;
-  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
-  btn.innerHTML = `<span>📋 ${escapeHtml(label)}</span>` +
-    `<span class="izuzeti-count">${escapeHtml(okolnostiSnippet())} ›</span>`;
-}
-function openOkolnostiOverlay() {
-  closeOkolnostiOverlay();
-  const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
-  const ov = document.createElement("div");
-  ov.className = "fs-overlay";
-  ov.id = "okolnosti-overlay";
-  ov.innerHTML = `
-    <div class="fs-overlay-header">
-      <span class="fs-overlay-title" id="okolnosti-ov-title">${escapeHtml(label)}</span>
-      <button class="fs-overlay-close" id="okolnosti-close">✕</button>
-    </div>`;
-  const obody = document.createElement("div");
-  obody.className = "fs-overlay-body";
-  obody.appendChild(buildUvidjajSwitch());
-  // Uviđaj mod: brzi unosi na VRH teksta — vrijeme početka i GPS lokacija.
-  // Namjerno BEZ reverse-geocodinga (adresa bi zahtijevala slanje lokacije vanjskom
-  // servisu) — koordinate su offline, privatne i egzaktne za pravni dokument.
-  if (STATE.header.uvidjaj_lock) {
-    const quick = document.createElement("div");
-    quick.className = "uvidjaj-quick";
-    quick.innerHTML = `
-      <button type="button" id="uvidjaj-start" class="btn-quick">📍 Početak uviđaja (dan, datum, vrijeme, adresa)</button>`;
-    obody.appendChild(quick);
-  }
-  const taWrap = document.createElement("div");
-  taWrap.className = "field";
-  taWrap.innerHTML = `<textarea class="dict-textarea" id="okolnosti-fs-ta" data-header-id="okolnosti" placeholder="Opiši okolnosti / uviđaj…">${escapeHtml(STATE.header.okolnosti || "")}</textarea>`;
-  obody.appendChild(taWrap);
-  ov.appendChild(obody);
-  // Donja traka kao kod sekcija: mikrofon + Doradi
-  const bar = document.createElement("div");
-  bar.className = "okolnosti-actionbar";
-  bar.innerHTML = `
-    <button type="button" id="okolnosti-mic" class="btn-mic">🎤 Diktiraj</button>
-    <button type="button" id="okolnosti-cleanup" class="btn-cleanup">✨ Doradi (Claude)</button>`;
-  ov.appendChild(bar);
-  document.body.appendChild(ov);
-  document.body.classList.add("has-fullscreen");
-  bindOkolnostiOverlay(ov);
-}
-function closeOkolnostiOverlay() {
-  const ov = document.getElementById("okolnosti-overlay");
-  if (ov) ov.remove();
-  document.body.classList.remove("has-fullscreen");
-  updateOkolnostiOpener();
-}
-function bindOkolnostiOverlay(ov) {
-  const close = ov.querySelector("#okolnosti-close");
-  if (close) close.addEventListener("click", closeOkolnostiOverlay);
-  const ta = ov.querySelector("#okolnosti-fs-ta");
-  if (ta) {
-    ta.addEventListener("input", () => {
-      STATE.header.okolnosti = ta.value;
-      autoGrow(ta);
-      updateHeaderSummary();
-      autoSave();
-    });
-    autoGrow(ta);
-  }
-  const sw = ov.querySelector("#uvidjaj-switch");
-  if (sw) sw.addEventListener("click", () => {
-    const now = !STATE.header.uvidjaj_lock;
-    STATE.header.uvidjaj_lock = now;
-    STATE.header.okolnosti_label = now ? "Uviđaj" : "Okolnosti slučaja";
-    autoSave();
-    openOkolnostiOverlay();  // ponovo izgradi sa novim modom (tekst ostaje)
-    toast(now
-      ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
-      : "Okolnosti se popunjavaju iz naredbe", "success");
-  });
-  const mic = ov.querySelector("#okolnosti-mic");
-  if (mic) mic.addEventListener("click", () => toggleOkolnostiMic(mic));
-  const dor = ov.querySelector("#okolnosti-cleanup");
-  if (dor) dor.addEventListener("click", () => cleanupOkolnosti(dor));
-
-  // Uviđaj brzi unos (vidljiv samo u Uviđaj modu): jedna rečenica na vrh —
-  // "Uviđaj dana <dan u sedmici>, DD.MM.YYYY. godine u HH:MM sati na adresi <adresa>."
-  const sBtn = ov.querySelector("#uvidjaj-start");
-  if (sBtn) sBtn.addEventListener("click", async () => {
-    const DANI_GEN = ["nedjelje", "ponedjeljka", "utorka", "srijede", "četvrtka", "petka", "subote"];
-    const d = new Date();
-    const p2 = n => String(n).padStart(2, "0");
-    const uvod = `Uviđaj dana ${DANI_GEN[d.getDay()]}, ${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}. godine u ${p2(d.getHours())}:${p2(d.getMinutes())} sati`;
-    const old = sBtn.textContent;
-    sBtn.disabled = true;
-    sBtn.textContent = "⏳ Tražim lokaciju…";
-    const done = (msg, level) => { sBtn.disabled = false; sBtn.textContent = old; toast(msg, level); };
-    if (!navigator.geolocation) {
-      prependToOkolnosti(uvod + ".");
-      done("Dodano bez adrese (GPS nedostupan)", "error");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const c = pos.coords;
-      const addr = await nativeGeocode(c.latitude, c.longitude);
-      if (addr) {
-        prependToOkolnosti(`${uvod} na adresi ${addr}.`);
-        done("Početak uviđaja dodan ✓", "success");
-      } else {
-        // Adresa nedostupna (bez mreže/geocoder) — koordinate kao rezerva, vještak dopiše adresu
-        prependToOkolnosti(`${uvod} na lokaciji ${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)} (±${Math.round(c.accuracy)} m).`);
-        done("Adresa nedostupna — upisane koordinate (dopiši adresu)", "error");
-      }
-    }, err => {
-      prependToOkolnosti(uvod + ".");
-      done("Dodano bez adrese — GPS: " + (err.message || ("kod " + err.code)), "error");
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
-  });
 }
 
 // === Okolnosti / Uviđaj i Izuzeti uzorci — kao KARTICE na home (ispod Zaglavlja) ===
@@ -1525,7 +1353,7 @@ function autoGrow(ta) {
   if (!ta) return;
   if (NATIVE_AUTOGROW) return;  // browser sam veliča — ne diraj height ni scroll
   // Fallback za starije WebView: sačuvaj skrol kontejnera da kucanje ne "skoči" na vrh
-  const sc = ta.closest(".card.fullscreen, .fs-overlay");
+  const sc = ta.closest(".card.fullscreen");
   const top = sc ? sc.scrollTop : 0;
   ta.style.height = "auto";
   ta.style.height = (ta.scrollHeight + 2) + "px";
@@ -1569,13 +1397,13 @@ function caretYInTextarea(ta) {
 function ensureCaretVisible() {
   const ta = document.activeElement;
   if (!ta || ta.tagName !== "TEXTAREA") return;
-  const sc = ta.closest(".card.fullscreen, .fs-overlay");
-  if (!sc) return;  // samo u kokpitu/overlay-u ima smisla
+  const sc = ta.closest(".card.fullscreen");
+  if (!sc) return;  // samo u fokus-kokpitu ima smisla
   const vv = window.visualViewport;
   const viewTop = vv ? vv.offsetTop : 0;
   const viewH = vv ? vv.height : window.innerHeight;
   // sticky header sekcije prekriva vrh
-  const hdr = sc.querySelector(".card-header-row, .fs-overlay-header");
+  const hdr = sc.querySelector(".card-header-row");
   const hdrH = (hdr && hdr.offsetHeight) ? hdr.offsetHeight : 0;
   // donja fokus-traka (mikrofon/Spoji) prekriva dno — izraženije u „Diktat" modu
   const nav = document.querySelector(".focus-nav.show");
@@ -1627,19 +1455,6 @@ const GROUP_LABEL = {
 };
 
 // Kratak izvod sadržaja ispod naslova sekcije (u listi).
-function sectionSummary(sid) {
-  const def = getSectionDef(sid);
-  const sec = getSection(sid);
-  if (def && def.multi && sec.items) {
-    const n = sec.items.filter(it => (it.final || it.raw || "").trim()).length;
-    return n > 0 ? `${n} ${n === 1 ? "unos" : "unosa"}` : "";
-  }
-  const src = ((sec.final || "").trim()) || ((sec.raw || "").trim());
-  if (!src) return "";
-  const clean = src.replace(/\s+/g, " ");
-  return clean.length > 54 ? clean.slice(0, 54) + "…" : clean;
-}
-
 function renderSections() {
   if (typeof exitFocus === "function") exitFocus();  // resetuj fokus pri punom renderu
   const container = $("#sections-container");
@@ -2243,17 +2058,14 @@ window.onAndroidBack = function () {
     if (cancel) cancel.click(); else dlg.remove();
     return true;
   }
-  // 1) Otvoreni overlay (Okolnosti / Izuzeti uzorci) — klik na njegov ✕ (koristi postojeću logiku)
-  const ovClose = document.querySelector(".fs-overlay .fs-overlay-close");
-  if (ovClose) { ovClose.click(); return true; }
-  // 2) Otvoreni modal (Drafti, potvrde) — klik na ✕ / zatvaranje
+  // 1) Otvoreni modal (Drafti, potvrde) — klik na ✕ / zatvaranje
   const modalClose = document.querySelector(".modal-overlay [data-close-modal], .modal-overlay .modal-close");
   if (modalClose) { modalClose.click(); return true; }
-  // 3) Fokus-kokpit (sekcija preko cijelog ekrana) → nazad na listu
+  // 2) Fokus-kokpit (sekcija preko cijelog ekrana) → nazad na listu
   if (typeof STATE !== "undefined" && STATE.focusSectionId) { exitFocus(); return true; }
-  // 4) Okolnosti/Izuzeti kartica otvorena u fullscreen → nazad na listu
+  // 3) Okolnosti/Izuzeti/Zaglavlje kartica otvorena u fullscreen → nazad na listu
   if (typeof STATE !== "undefined" && STATE.fsCardId) { exitCardFullscreen(); return true; }
-  // 5) Otvorena akordeon-kartica na home (Zaglavlje) → zatvori je
+  // 4) Otvorena akordeon-kartica na home (Zaglavlje) → zatvori je
   const openCard = document.querySelector("#app > .card.collapsible.open:not(.fullscreen)");
   if (openCard) { openCard.classList.remove("open"); return true; }
   // Nema šta zatvoriti. Vraćamo true svejedno — back NIKAD ne obara aplikaciju
@@ -3528,60 +3340,12 @@ function flashSavedIndicator() {
 //  Keš liste se osvježava pri startu i pri svakom upisu kroz persistDraft.)
 
 // === Konflikt banner ===
-function showConflictBanner(draftId, serverTs) {
-  hideConflictBanner();
-  const banner = document.createElement("div");
-  banner.id = "conflict-banner";
-  banner.className = "conflict-banner";
-  banner.innerHTML = `
-    <span class="conflict-icon">⚠</span>
-    <span class="conflict-text">
-      Server ima <b>noviju verziju</b> ovog drafta
-      (${new Date(serverTs).toLocaleTimeString("bs-BA")}).
-      Vjerovatno je drugi uređaj radio izmjene.
-    </span>
-    <div class="conflict-actions">
-      <button class="btn-conflict-load">⬇ Učitaj sa servera</button>
-      <button class="btn-conflict-keep">✓ Zadrži moje izmjene</button>
-    </div>
-  `;
-  document.body.appendChild(banner);
-  banner.querySelector(".btn-conflict-load").addEventListener("click", async () => {
-    await switchToDraft(draftId);
-    hideConflictBanner();
-  });
-  banner.querySelector(".btn-conflict-keep").addEventListener("click", () => {
-    // Forsiraj upload trenutnog stanja sa novim timestamp-om
-    autoSave();
-    hideConflictBanner();
-    toast("Tvoje izmjene su snimljene kao najnovija verzija");
-  });
-}
-
 function hideConflictBanner() {
   const b = $("#conflict-banner");
   if (b) b.remove();
 }
 
 // === Util ===
-// Parsiraj Content-Disposition header — handle filename*=utf-8'' (RFC 5987) i filename=
-function parseContentDispositionFilename(cd) {
-  if (!cd) return null;
-  // RFC 5987 format: filename*=utf-8''<URL-encoded>
-  const m1 = cd.match(/filename\*=utf-8''([^;]+)/i);
-  if (m1) {
-    try { return decodeURIComponent(m1[1].trim()); }
-    catch { /* fall through */ }
-  }
-  // Standardni format: filename="..."
-  const m2 = cd.match(/filename="([^"]+)"/i);
-  if (m2) return m2[1];
-  // Standardni bez navodnika: filename=...
-  const m3 = cd.match(/filename=([^;]+)/i);
-  if (m3) return m3[1].trim();
-  return null;
-}
-
 // Datum format koji koristi vještak: "DD.MM.YYYY. godine"
 function formatDateToday() {
   const d = new Date();
