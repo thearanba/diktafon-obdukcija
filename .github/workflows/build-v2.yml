@@ -56,11 +56,26 @@ jobs:
             git push origin HEAD:v2
           fi
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      # RELEASE (ne debug): debuggable=false → `adb run-as` više ne može izvući drafte
+      # i API ključeve sa telefona. Potpisuje se ISTIM keystore-om kao dosad, pa se nova
+      # verzija i dalje instalira PREKO postojeće — drafti ostaju, bez deinstalacije.
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK to app name
-        run: cp app/build/outputs/apk/debug/app-debug.apk "Diktafon v2.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "Diktafon v2.apk"
+
+      # Tvrda kapija: nepotpisan ili debuggable APK ne smije otići u Release.
+      - name: Verify APK is signed and not debuggable
+        run: |
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          echo "build-tools: $BT"
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs "Diktafon v2.apk"
+          if "$ANDROID_HOME/build-tools/$BT/aapt2" dump badging "Diktafon v2.apk" | grep -q "application-debuggable"; then
+            echo "GREŠKA: APK je debuggable — ne objavljujem."
+            exit 1
+          fi
+          echo "APK je potpisan i NIJE debuggable."
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

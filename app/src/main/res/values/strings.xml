@@ -17,6 +17,11 @@
     <string name="login_err_short">Lozinka mora imati bar 6 znakova.</string>
     <string name="login_err_mismatch">Lozinke se ne podudaraju.</string>
     <string name="login_err_wrong">Pogrešna lozinka.</string>
+    <string name="login_err_wrong_left">Pogrešna lozinka. Još %1$d pokušaja prije pauze.</string>
+    <string name="login_err_lockout">Previše pogrešnih pokušaja. Pokušaj ponovo za %1$s (ili otiskom prsta).</string>
+    <string name="login_bio_invalidated">Otisak je isključen jer su se otisci na uređaju promijenili. Prijavi se lozinkom pa ga po želji ponovo uključi.</string>
+    <string name="login_bio_failed">Otisak nije uključen — pokušaj ponovo.</string>
+    <string name="login_bio_reenable">Otisak je sada vezan za sigurnosni ključ uređaja, pa ga treba uključiti ponovo. Prijavi se lozinkom, a otisak uključi u Postavkama.</string>
     <string name="login_bio_subtitle">Otključaj otiskom prsta</string>
     <string name="login_bio_use_password">Koristi lozinku</string>
     <string name="login_bio_offer_title">Otključavanje otiskom?</string>

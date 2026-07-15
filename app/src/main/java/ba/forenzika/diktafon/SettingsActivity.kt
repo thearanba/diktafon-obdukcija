@@ -3,6 +3,7 @@ package ba.forenzika.diktafon
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
@@ -34,12 +35,29 @@ class SettingsActivity : AppCompatActivity() {
         if (AppLock.isConfigured(prefs) && bioAvailable) {
             swBiometric.visibility = android.view.View.VISIBLE
             swBiometric.isChecked = prefs.getBoolean(AppLock.KEY_BIO_ENABLED, false)
-            swBiometric.setOnCheckedChangeListener { _, checked ->
-                prefs.edit()
-                    .putBoolean(AppLock.KEY_BIO_ENABLED, checked)
-                    .putBoolean(AppLock.KEY_BIO_ASKED, true)
-                    .apply()
+
+            // Uključivanje traži otisak ODMAH (veže Keystore ključ). Bez toga bi prekidač
+            // samo upisao flag, a otključavanje bi pri prvom pokušaju tiho palo na lozinku.
+            val listener = object : android.widget.CompoundButton.OnCheckedChangeListener {
+                override fun onCheckedChanged(sw: android.widget.CompoundButton, checked: Boolean) {
+                    if (!checked) { BioSetup.disable(prefs); return }
+                    sw.isEnabled = false
+                    BioSetup.enable(this@SettingsActivity, prefs) { ok ->
+                        sw.isEnabled = true
+                        if (!ok) {
+                            BioSetup.disable(prefs)
+                            // Vrati prekidač BEZ ponovnog okidanja, pa odmah vrati listener
+                            // (bez ovoga bi ostao null i otisak se više ne bi mogao uključiti).
+                            sw.setOnCheckedChangeListener(null)
+                            sw.isChecked = false
+                            sw.setOnCheckedChangeListener(this)
+                            Toast.makeText(this@SettingsActivity,
+                                getString(R.string.login_bio_failed), Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
             }
+            swBiometric.setOnCheckedChangeListener(listener)
         }
 
         btnSave.setOnClickListener {
