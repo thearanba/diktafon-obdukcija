@@ -537,7 +537,9 @@ function composeIzuzeti() {
   let s;
   if (segs.length) s = segs.join("; ") + ". Svi uzorci predani krim-tehničaru na dalje postupanje.";
   else s = "Nisu izuzeti uzorci za dodatne pretrage.";
-  STATE.header.izuzeti_uzorci = s;
+  // Prazna selekcija → state ostaje "" (da prazan draft NE ispadne „ima sadržaj");
+  // default rečenicu generator svejedno upiše pri praznom izuzeti_uzorci.
+  STATE.header.izuzeti_uzorci = segs.length ? s : "";
   return s;
 }
 
@@ -577,9 +579,10 @@ function buildIzuzetiChecklist(f) {
 }
 
 function refreshIzuzetiPreview() {
-  composeIzuzeti();
+  const composed = composeIzuzeti();
   const pv = $("#izuzeti-preview");
-  if (pv) { pv.value = STATE.header.izuzeti_uzorci; autoGrow(pv); }
+  if (pv) { pv.value = STATE.header.izuzeti_uzorci || composed; autoGrow(pv); }
+  if (typeof updateIzuzetiCardMeta === "function") updateIzuzetiCardMeta();  // home meta odmah svjež
   updateHeaderSummary();
   autoSave();
 }
@@ -997,6 +1000,7 @@ function appendToOkolnosti(text) {
   STATE.header.okolnosti = cur ? cur + " " + text.trim() : text.trim();
   if (ta) { ta.value = STATE.header.okolnosti; autoGrow(ta); ta.scrollTop = ta.scrollHeight; }
   updateHeaderSummary();
+  if (typeof updateOkolnostiCardMeta === "function") updateOkolnostiCardMeta();  // home meta odmah svjež
   autoSave();
 }
 
@@ -1014,7 +1018,8 @@ async function toggleOkolnostiMic(btn) {
   // (inače bi dva recorder-a radila paralelno, a referenca na prvi bi se izgubila)
   if (STATE.recording) stopRecording();
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await acquireAudioStream();
+    if (!stream) return;  // dupli tap dok se mikrofon otvara — ne pravi drugi (zombi) recorder
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
     const rec = { okolnosti: true, mediaRecorder: mr, chunks };
@@ -1124,7 +1129,8 @@ async function toggleIzuzetiMic(btn) {
   }
   if (STATE.recording) stopRecording();
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await acquireAudioStream();
+    if (!stream) return;  // dupli tap dok se mikrofon otvara — ne pravi drugi (zombi) recorder
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
     const rec = { izuzeti: true, mediaRecorder: mr, chunks };
@@ -1200,7 +1206,8 @@ async function toggleHeaderMic(btn) {
   if (!STATE.headerMicField) { toast("Prvo dodirni polje u koje diktiraš (ime, adresa…)", "error"); return; }
   if (STATE.recording) stopRecording();
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await acquireAudioStream();
+    if (!stream) return;  // dupli tap dok se mikrofon otvara — ne pravi drugi (zombi) recorder
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
     const rec = { headerField: true, mediaRecorder: mr, chunks };
@@ -1964,6 +1971,11 @@ function cacheTag(res) {
 }
 
 // === Merge (Opcija B) ===
+// Upozorenje ako je Claude odgovor odsječen (max_tokens) — kraj teksta možda fali
+function warnIfTruncated(res) {
+  if (res && res.truncated) toast("⚠ Odgovor je možda odsječen (predugačak) — provjeri KRAJ teksta", "error");
+}
+
 async function mergeSection(sectionId) {
   if (!STATE.config.claude_available) {
     toast("Claude API nije konfigurisan u .env fajlu", "error");
@@ -2001,6 +2013,7 @@ async function mergeSection(sectionId) {
       }),
     });
     sec.final = res.text;
+    warnIfTruncated(res);
     const finalTa = document.querySelector(`textarea[data-section-id="${sectionId}"][data-target="final"]`);
     if (finalTa) { finalTa.value = res.text; autoGrow(finalTa); }
     // Nakon spajanja prebaci na "Finalno" tab (vidiš rezultat)
@@ -2064,6 +2077,9 @@ function shortTitle(t) {
 }
 
 function enterFocus(sid) {
+  // KLJUČNO: prelazak/ulazak u drugi fokus zaustavlja snimanje (inače bi mikrofon
+  // nastavio raditi „nevidljivo" i transkript bi mogao završiti u pogrešnoj sekciji/draftu)
+  if (STATE.recording) stopRecording();
   // zatvori eventualnu Okolnosti/Izuzeti fullscreen karticu (i njenu donju traku)
   if (typeof STATE !== "undefined" && STATE.fsCardId && typeof exitCardFullscreen === "function") exitCardFullscreen();
   // zatvori sve, otvori+fokusiraj ovu
@@ -2107,6 +2123,7 @@ function enterFocus(sid) {
 }
 
 function exitFocus() {
+  if (STATE.recording) stopRecording();  // izlaz iz fokusa zaustavlja snimanje
   document.querySelectorAll(".card.fullscreen").forEach(c => {
     c.classList.remove("fullscreen", "open");  // izlaz iz fokusa → sekcija skupljena u listi
     const b = c.querySelector("[data-focus]");
@@ -2122,6 +2139,14 @@ function exitFocus() {
 // Vraća true ako je nešto zatvoreno (korak nazad) → app ostaje otvorena;
 // false ako nema šta zatvoriti → MainActivity smije na home screen.
 window.onAndroidBack = function () {
+  // 0) Vlastiti dijalog (uiConfirm/uiPrompt) — zatvori PRVI (inače bi back zatvorio
+  //    fokus ispod dijaloga, a dijalog ostao da visi nad home listom)
+  const dlg = document.querySelector(".dlg-overlay");
+  if (dlg) {
+    const cancel = dlg.querySelector("[data-dlg-cancel]") || dlg.querySelector("[data-dlg-close]");
+    if (cancel) cancel.click(); else dlg.remove();
+    return true;
+  }
   // 1) Otvoreni overlay (Okolnosti / Izuzeti uzorci) — klik na njegov ✕ (koristi postojeću logiku)
   const ovClose = document.querySelector(".fs-overlay .fs-overlay-close");
   if (ovClose) { ovClose.click(); return true; }
@@ -2158,6 +2183,7 @@ function enterCardFullscreen(card) {
   card.scrollTop = 0;
 }
 function exitCardFullscreen() {
+  if (STATE.recording) stopRecording();  // izlaz iz kartice zaustavlja snimanje
   document.querySelectorAll(CARD_FS_SEL).forEach(c => c.classList.remove("fullscreen", "open"));
   document.body.classList.remove("has-fullscreen");
   STATE.fsCardId = null;
@@ -2393,7 +2419,8 @@ async function startItemRecording(sectionId, itemIdx) {
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await acquireAudioStream();
+    if (!stream) return;  // dupli tap dok se mikrofon otvara — ne pravi drugi (zombi) recorder
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
     const rec = { section_id: sectionId, itemIdx, mediaRecorder: mr, chunks, warmingUp: true };
@@ -2524,6 +2551,7 @@ async function mergeItem(sectionId, itemIdx) {
       }),
     });
     item.final = res.text.trim();
+    warnIfTruncated(res);
     const finalTa = document.querySelector(
       `textarea[data-item-section="${sectionId}"][data-item-idx="${itemIdx}"][data-item-target="final"]`
     );
@@ -2556,7 +2584,8 @@ async function startRecording(sectionId, target) {
 
 async function startGroqRecording(sectionId, target) {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await acquireAudioStream();
+    if (!stream) return;  // dupli tap dok se mikrofon otvara — ne pravi drugi (zombi) recorder
     const mr = new MediaRecorder(stream, { mimeType: pickMimeType() });
     const chunks = [];
     const rec = { section_id: sectionId, target, mediaRecorder: mr, chunks, warmingUp: true };
@@ -2672,6 +2701,16 @@ function startWebSpeechRecording(sectionId, target) {
   STATE.recording = { section_id: sectionId, target, webSpeech: rec };
   startRecTimer();
   updateMicButtonState(sectionId, "recording");
+}
+
+// Guard protiv duplog tapa dok se mikrofon otvara (getUserMedia je async) —
+// bez ovoga dva brza tapa naprave dva recordera; drugi pregazi referencu na prvi
+// koji onda trajno drži mikrofon (zombi). Vraća null ako je akvizicija već u toku.
+async function acquireAudioStream() {
+  if (STATE.recStarting) return null;
+  STATE.recStarting = true;
+  try { return await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  finally { STATE.recStarting = false; }
 }
 
 function stopRecording() {
@@ -3008,12 +3047,9 @@ async function generateReport(share) {
       { title: "Upozorenje", okText: "Generiši svejedno", cancelText: "Popuni prvo" }
     );
     if (!proceed) {
-      // Otvori zaglavlje da korisnik popuni
+      // Otvori Zaglavlje u FULLSCREEN (kao sve ostale kartice) da korisnik popuni
       const headerCard = $("#header-card");
-      if (headerCard) {
-        headerCard.classList.add("open");
-        headerCard.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+      if (headerCard && typeof enterCardFullscreen === "function") enterCardFullscreen(headerCard);
       return;
     }
   }

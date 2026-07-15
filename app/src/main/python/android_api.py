@@ -316,6 +316,15 @@ def _safe_draft_id(s: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_\-]", "", s or "")[:64]
 
 
+def _atomic_write_json(path, obj):
+    """Upiši JSON atomično: temp fajl + os.replace. Sprječava da kill procesa ili pun
+    disk usred pisanja ostave POLOVIČAN draft (koji bi se onda tiho preskočio → nestao)."""
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(str(tmp), str(path))
+
+
 def _case_context_block(ctx) -> str:
     """Blok 'KONTEKST SLUČAJA' za merge/cleanup — Claude inače ne zna pol ni dob
     (sekcije se spajaju izolovano, a ti podaci žive u zaglavlju). Ide u user poruku
@@ -437,12 +446,12 @@ def ep_cleanup(payload):
     user_msg = f"{ctx_block}Sekcija: {payload.get('section_title', '')}\n\nSirovi tekst:\n{text}"
     result = api_clients.claude_messages(
         ANTHROPIC_API_KEY, CLAUDE_MODEL, CLEANUP_SYSTEM,
-        [{"role": "user", "content": user_msg}], max_tokens=2000,
+        [{"role": "user", "content": user_msg}], max_tokens=4000,
     )
     cleaned = _strip_output_tag(result["text"])
     if cleaned.startswith('"') and cleaned.endswith('"'):
         cleaned = cleaned[1:-1].strip()
-    return {"text": cleaned}
+    return {"text": cleaned, "truncated": result.get("truncated", False)}
 
 
 def ep_merge(payload):
@@ -496,7 +505,7 @@ def ep_merge(payload):
 
     result = api_clients.claude_messages(
         ANTHROPIC_API_KEY, CLAUDE_MODEL, system_blocks,
-        [{"role": "user", "content": user_content}], max_tokens=2000,
+        [{"role": "user", "content": user_content}], max_tokens=4000,
     )
     merged = _strip_output_tag(result["text"])
     if merged.startswith('"') and merged.endswith('"'):
@@ -504,6 +513,7 @@ def ep_merge(payload):
     u = result["usage"]
     return {
         "text": merged,
+        "truncated": result.get("truncated", False),
         "tokens_in": u["input_tokens"], "tokens_out": u["output_tokens"],
         "cache_read": u["cache_read"], "cache_create": u["cache_create"],
     }
@@ -668,8 +678,7 @@ def ep_import_drafts(payload):
             "sections": data.get("sections", {}) or {},
             "updatedAt": data.get("updatedAt", 0),
         }
-        (DRAFTS_DIR / f"{did}.json").write_text(
-            json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        _atomic_write_json(DRAFTS_DIR / f"{did}.json", out)
         existing.add(did)
         imported += 1
 
@@ -683,8 +692,15 @@ def ep_drafts_list(_payload):
     for fp in DRAFTS_DIR.glob("*.json"):
         try:
             d = json.loads(fp.read_text(encoding="utf-8"))
-            drafts.append({"id": fp.stem, "name": d.get("name", "Bez naziva"),
-                           "updatedAt": d.get("updatedAt", 0)})
+            ts = d.get("updatedAt", 0)
+            # Uvezeni/stari draft može imati updatedAt kao string → normalizuj na broj
+            # (inače bi sort pao na poređenju str/int i srušio CIJELU listu draftova)
+            if not isinstance(ts, (int, float)):
+                try:
+                    ts = float(ts)
+                except (TypeError, ValueError):
+                    ts = 0
+            drafts.append({"id": fp.stem, "name": d.get("name", "Bez naziva"), "updatedAt": ts})
         except Exception:
             pass
     drafts.sort(key=lambda d: d["updatedAt"], reverse=True)
@@ -710,9 +726,7 @@ def ep_draft_put(payload):
         "sections": payload.get("sections", {}),
         "updatedAt": payload.get("updatedAt", 0),
     }
-    (DRAFTS_DIR / f"{safe}.json").write_text(
-        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    _atomic_write_json(DRAFTS_DIR / f"{safe}.json", out)
     return {"ok": True, "id": safe, "updatedAt": out["updatedAt"]}
 
 

@@ -128,23 +128,41 @@ class MainActivity : AppCompatActivity() {
             override fun shouldInterceptRequest(
                 view: WebView, request: WebResourceRequest
             ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+
+            // SIGURNOST: dozvoli navigaciju SAMO na lokalni appassets host. Svaki drugi
+            // link (npr. u tekstu koji vrati Claude, ili slučajan <a href>) NE smije
+            // učitati udaljenu stranicu u ovom WebView-u — ona bi dobila pun pristup
+            // AndroidBridge mostu (čitanje/pisanje draftova, dijeljenje). Eksterni linkovi
+            // se otvaraju u sistemskom browseru; sve ostalo se blokira.
+            override fun shouldOverrideUrlLoading(
+                view: WebView, request: WebResourceRequest
+            ): Boolean {
+                val url = request.url
+                if (url.host == "appassets.androidplatform.net") return false  // dozvoli (naša app)
+                if (url.scheme == "http" || url.scheme == "https") {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, url)) } catch (_: Exception) {}
+                }
+                return true  // sve ostalo: NE učitavaj u WebView-u
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
-                // Odobri SINHRONO unutar callback-a (onPermissionRequest je već na UI niti).
+                // Odobri SAMO ako zahtjev dolazi s našeg appassets origina i SAMO mikrofon.
+                val ok = request.origin?.host == "appassets.androidplatform.net"
                 val wanted = request.resources.filter {
                     it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
                 }.toTypedArray()
-                if (wanted.isNotEmpty()) request.grant(wanted) else request.deny()
+                if (ok && wanted.isNotEmpty()) request.grant(wanted) else request.deny()
             }
 
             override fun onGeolocationPermissionsShowPrompt(
                 origin: String?, callback: GeolocationPermissions.Callback?
             ) {
-                // Lokalna aplikacija (appassets origin) — odobri geolokaciju; sistemsku
-                // runtime dozvolu (ACCESS_FINE_LOCATION) traži onCreate.
-                callback?.invoke(origin, true, false)
+                // Geolokaciju odobri SAMO našem appassets originu (sistemsku runtime
+                // dozvolu ACCESS_FINE_LOCATION traži onCreate).
+                val ok = origin != null && origin.contains("appassets.androidplatform.net")
+                callback?.invoke(origin, ok, false)
             }
 
             override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
