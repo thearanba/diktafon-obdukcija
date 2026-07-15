@@ -34,6 +34,11 @@ def _ensure_run_format_from_pPr(para):
 
 USER_CONTENT_HIGHLIGHT = "yellow"  # Word highlight color (named values only)
 
+# Vodeća numeracija stavke („1. ", „2) ") koju treba skinuti prije nego generator upiše
+# svoju. Namjerno usko: najviše 2 cifre, obavezan razmak iza tačke, i iza njega NE smije
+# doći cifra — inače bi „15.07.2026. godine…" ostalo bez dana, a „1,5 cm" bez mjere.
+_STRIP_NUM_RE = re.compile(r"^\s*\d{1,2}\s*[.)]\s+(?=[^\d\s])")
+
 
 # Oznake tužilaštava u tužilačkom broju (TCMS): T01–T10 = kantonalna tužilaštva FBiH
 # (broj prati broj kantona), T20 = Tužilaštvo BiH. Genitiv — ide u rečenicu
@@ -261,34 +266,99 @@ def _clear_paragraph(para):
         r._r.getparent().remove(r._r)
 
 
+def _norm_txt(s: str) -> str:
+    """Normalizuj tekst ćelije za poređenje sa sidrom (višak razmaka, velika slova)."""
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+
+def _cell_matches(cell, anchor: str, mode: str) -> bool:
+    t = _norm_txt(cell.text)
+    a = _norm_txt(anchor)
+    return (a in t) if mode == "contains" else t.startswith(a)
+
+
+def _resolve_cell(table, expect, anchor: str, mode: str):
+    """Pozicija ćelije: očekivana se POTVRDI sidrom (tekstom iz template-a), a ako se
+    ne poklapa (izmijenjen template), sidro se traži po cijeloj tabeli.
+
+    Nikad ne upisujemo naslijepo po (red, kolona) — izmijenjen template bi inače tiho
+    razbacao ime, datume i broj predmeta po pogrešnim ćelijama zapisnika.
+    """
+    r0, c0 = expect
+    try:
+        if _cell_matches(table.rows[r0].cells[c0], anchor, mode):
+            return r0, c0
+    except IndexError:
+        pass
+    for r, row in enumerate(table.rows):
+        for c, cell in enumerate(row.cells):
+            if _cell_matches(cell, anchor, mode):
+                print(f"[docx_generator] Sidro {anchor!r}: očekivano {expect}, nađeno {(r, c)}")
+                return r, c
+    return None
+
+
+# Sidra tabele zaglavlja: (ključ, očekivana pozicija, tekst iz template-a, način).
+# „contains" tamo gdje ćelija ima više linija pa label nije na početku.
+_HEADER_ANCHORS = (
+    ("ime",            (1, 0), "Ime i prezime:",       "starts"),
+    ("drzavljanin",    (1, 2), "Državljanin:",         "starts"),
+    ("prebivaliste",   (2, 0), "Prebivalište:",        "starts"),
+    ("adresa",         (2, 2), "Adresa:",              "starts"),
+    ("rodjen",         (3, 0), "Rođen/a:",             "starts"),
+    ("pronadjen",      (3, 2), "Pronađen/preminuo:",   "starts"),
+    ("tuzilastvo",     (4, 1), "Naredbom tužioca",     "contains"),
+    ("okolnosti_label", (5, 0), "Okolnosti slučaja:",  "starts"),
+    ("okolnosti",      (5, 1), "izuzeti uzorci",       "contains"),
+    ("obdukovan",      (6, 0), "Obdukovan/a:",         "starts"),
+    ("obducent",       (6, 2), "Obducent:",            "contains"),
+)
+
+
 def _fill_header_table(doc, header_data: dict):
-    """Popunjava tabelu zaglavlja: dodaje vrijednosti uz postojeće labele."""
+    """Popunjava tabelu zaglavlja: dodaje vrijednosti uz postojeće labele.
+
+    Sve pozicije se razriješe PRIJE ijednog upisa (upis mijenja tekst ćelije, pa bi
+    inače pomjerio sidro po kojem se traži sljedeće polje). Ako sidro nedostaje,
+    generisanje se PREKIDA — pogrešno popunjen zapisnik je gori od nikakvog.
+    """
     if not doc.tables:
-        return
+        raise ValueError("Template nema tabelu zaglavlja.")
     table = doc.tables[0]
 
-    def set_cell(row_idx, col_idx, label, value):
-        try:
-            cell = table.rows[row_idx].cells[col_idx]
-        except IndexError:
-            return
+    pos, missing = {}, []
+    for key, expect, anchor, mode in _HEADER_ANCHORS:
+        p = _resolve_cell(table, expect, anchor, mode)
+        if p is None:
+            missing.append(anchor)
+        pos[key] = p
+    if missing:
+        raise ValueError(
+            "Template zaglavlja ne odgovara očekivanom — nisu pronađena polja: "
+            + "; ".join(missing)
+            + ". Zapisnik NIJE generisan (podaci bi otišli u pogrešne ćelije)."
+        )
+
+    def set_cell(key, label, value):
+        r, c = pos[key]
         # Label = template format (ostaje kako je u template-u, bez highlight)
         # Value = svjetla žuta pozadina (vidi se da je korisnik unio)
-        _set_cell_label_value(cell, label, value or "")
+        _set_cell_label_value(table.rows[r].cells[c], label, value or "")
 
     ime = header_data.get("ime_prezime", "").strip()
     if ime:
         ime = ime.upper()
 
-    set_cell(1, 0, "Ime i prezime:", ime)
-    set_cell(1, 2, "Državljanin:", header_data.get("drzavljanin", ""))
-    set_cell(2, 0, "Prebivalište:", header_data.get("prebivaliste", ""))
-    set_cell(2, 2, "Adresa:", header_data.get("adresa", ""))
-    set_cell(3, 0, "Rođen/a:", header_data.get("rodjen", ""))
-    set_cell(3, 2, "Pronađen/preminuo:", header_data.get("pronadjen", ""))
+    set_cell("ime", "Ime i prezime:", ime)
+    set_cell("drzavljanin", "Državljanin:", header_data.get("drzavljanin", ""))
+    set_cell("prebivaliste", "Prebivalište:", header_data.get("prebivaliste", ""))
+    set_cell("adresa", "Adresa:", header_data.get("adresa", ""))
+    set_cell("rodjen", "Rođen/a:", header_data.get("rodjen", ""))
+    set_cell("pronadjen", "Pronađen/preminuo:", header_data.get("pronadjen", ""))
 
     # Cell (4,1): "Kantonalnog Tužilaštva..." (statič) + "tužilac: NAME" + "veza: BROJ" + "Naredbom..." (statič)
-    cell_41 = table.rows[4].cells[1]
+    _r, _c = pos["tuzilastvo"]
+    cell_41 = table.rows[_r].cells[_c]
     tuzilac = header_data.get("tuzilac", "")
     kt_broj_full = _full_kt(header_data.get("kt_broj", ""))
     _set_cell_lines_smart(cell_41, [
@@ -300,10 +370,11 @@ def _fill_header_table(doc, header_data: dict):
 
     # Cell (5,0): label - može biti "Okolnosti slučaja:" ili "Uviđaj:"
     okolnosti_label = header_data.get("okolnosti_label", "Okolnosti slučaja").strip() or "Okolnosti slučaja"
-    set_cell(5, 0, f"{okolnosti_label}:", "")
+    set_cell("okolnosti_label", f"{okolnosti_label}:", "")
 
     # Cell (5,1): okolnosti (USER) → izuzeti uzorci (USER) → standardni dodatak (statič)
-    cell_51 = table.rows[5].cells[1]
+    _r, _c = pos["okolnosti"]
+    cell_51 = table.rows[_r].cells[_c]
     okolnosti_tekst = header_data.get("okolnosti", "").strip()
     # Prazno (ništa nije izuzeto) → eksplicitna napomena, NE standardni spisak iz template-a
     izuzeti_tekst = (header_data.get("izuzeti_uzorci") or "").strip() or "Nisu izuzeti uzorci za dodatne pretrage."
@@ -326,10 +397,11 @@ def _fill_header_table(doc, header_data: dict):
     _set_cell_lines_smart(cell_51, specs_51)
 
     # Cell (6,0): Obdukovan/a: datum
-    set_cell(6, 0, "Obdukovan/a:", header_data.get("datum_obdukcije", ""))
+    set_cell("obdukovan", "Obdukovan/a:", header_data.get("datum_obdukcije", ""))
 
     # Cell (6,2): Obducent (statič) + Pomoćnik (label/value)
-    cell_62 = table.rows[6].cells[2]
+    _r, _c = pos["obducent"]
+    cell_62 = table.rows[_r].cells[_c]
     pomocnik = header_data.get("pomocnik", "")
     _set_cell_lines_smart(cell_62, [
         {"static": "Obducent: Prof. dr. Adis Salihbegović"},
@@ -510,6 +582,11 @@ def _fill_section(para, section: dict, value: str):
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
 
     if numbered:
+        # Skini numeraciju koju je tekst već ponio (Claude je zna dodati uprkos uputi,
+        # a i vještak je može ukucati ručno) — inače ispadne „1.\t1. Smrt je nasilna".
+        # Uzak namjerno: traži se razmak IZA tačke i da dalje NE ide cifra, inače bi
+        # tačka koja počinje datumom („15.07.2026. godine…") ostala bez dana.
+        lines = [_STRIP_NUM_RE.sub("", ln) for ln in lines]
         lines = [f"{i+1}.\t{ln}" for i, ln in enumerate(lines)]
     else:
         # Prvi paragraf dobija prefix sekcije ako postoji

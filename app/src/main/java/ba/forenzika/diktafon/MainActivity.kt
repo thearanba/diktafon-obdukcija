@@ -6,6 +6,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -345,6 +347,48 @@ class MainActivity : AppCompatActivity() {
                     ""
                 }
                 val json = """{"address":${jsonString(address)}}"""
+                val b64 = Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                webView.post {
+                    webView.evaluateJavascript(
+                        "window.__nativeResolve && window.__nativeResolve('$reqId','$b64')", null
+                    )
+                }
+            }
+        }
+
+        /** Dekodiraj sliku i vrati je kao JPEG (base64).
+         *
+         *  Zašto nativno: Samsung kamera zna snimati u HEIC, a Anthropic prima samo
+         *  jpeg/png/gif/webp — HEIC naredba je inače padala uz golo "400". WebView/canvas
+         *  ne dekodira HEIC, ali Android platforma (API 29+) dekodira HEIF nativno.
+         *  Usput smanjujemo na 1568 px (Anthropic ionako skalira) → manje tokena i brže
+         *  slanje sa terena. Async: rezultat {"jpeg_b64": …} ili {"error": …}. */
+        @JavascriptInterface
+        fun imageToJpeg(reqId: String, base64Data: String) {
+            pyExecutor.execute {
+                val json = try {
+                    val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                    val src = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        ?: throw IllegalArgumentException("slika se ne može pročitati")
+                    val maxSide = 1568
+                    val longest = maxOf(src.width, src.height)
+                    val bmp = if (longest > maxSide) {
+                        val scale = maxSide.toDouble() / longest
+                        Bitmap.createScaledBitmap(
+                            src, (src.width * scale).toInt().coerceAtLeast(1),
+                            (src.height * scale).toInt().coerceAtLeast(1), true
+                        )
+                    } else src
+                    val out = java.io.ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    if (bmp !== src) bmp.recycle()
+                    src.recycle()
+                    val jpegB64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                    """{"jpeg_b64":${jsonString(jpegB64)}}"""
+                } catch (e: Throwable) {
+                    Log.w(TAG, "imageToJpeg: ${e.message}")
+                    """{"error":${jsonString(e.message ?: "greška pri čitanju slike")}}"""
+                }
                 val b64 = Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
                 webView.post {
                     webView.evaluateJavascript(
