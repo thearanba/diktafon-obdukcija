@@ -747,55 +747,56 @@ body.has-fullscreen { overflow: hidden; }
 /* Fokus-prozor (fullscreen overlay) — npr. za Izuzete uzorke */
 /* Okolnosti/Uviđaj prozor — donja traka (mikrofon + Doradi), kao kod sekcija */
 
-/* Switch "Uviđaj" (naredba ↔ lični uviđaj) */
-.uvidjaj-switch {
+/* === Okolnosti slučaja / Uviđaj — izbor moda ===
+   Segmentirani tabovi (isti jezik kao Diktat/Finalno). Aktivna strana nosi brend-orange;
+   kad je Uviđaj, GORI cijela kartica (obrub + lijeva traka + naslov) da se lični uviđaj
+   vidi i letimičnim pogledom niz listu. */
+.okolnosti-home { padding: 0 12px 12px; }
+/* Na home naslov u vrhu NE treba — tabovi ispod ga već izgovaraju. U fullscreen-u ostaje. */
+#okolnosti-card:not(.fullscreen) .card-header-row { display: none; }
+#okolnosti-card:not(.fullscreen) .okolnosti-home { padding-top: 12px; }
+/* U fullscreen-u tabovi i meta idu u tijelo, pa se home-blok sklanja */
+#okolnosti-card.fullscreen .okolnosti-home { display: none; }
+
+.okolnosti-mode { margin-bottom: 8px; }
+.okolnosti-mode .seg-tab { font-size: 13.5px; min-height: 42px; }
+.okolnosti-mode .seg-tab.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+/* Zona za otvaranje u fullscreen — ODVOJENA od tabova (promašen dodir ne mijenja mod).
+   Cijeli red je meta (šta je upisano) + ›, visok ≥44px za pouzdan dodir. */
+.card-open-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 9px;
+  min-height: 44px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
+  border-radius: 9px;
   background: var(--surface-2);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
-  min-height: 44px;
 }
-.uvidjaj-switch .uvidjaj-knob {
-  flex: 0 0 auto;
-  width: 38px;
-  height: 22px;
-  border-radius: 11px;
-  background: var(--border);
-  position: relative;
-  transition: background 0.15s;
+.card-open-row:active { background: var(--border); }
+.card-open-row .ct-sub { flex: 1; line-height: 1.3; }
+.card-open-row .open-chevron { flex: 0 0 auto; font-size: 18px; color: var(--text-dim); }
+
+/* Uviđaj uključen → cijela kartica gori: obrub + podloga + naslov u brend-orange.
+   (Bez dodatne lijeve trake — uz obrub se stapa u „deblji obrub" i ništa ne dodaje.) */
+#okolnosti-card.uvidjaj-on {
+  border-color: var(--primary);
+  background: rgba(245, 134, 52, 0.07);
 }
-.uvidjaj-switch .uvidjaj-knob::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  transition: left 0.15s;
-}
-.uvidjaj-switch.active {
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.14);
-  color: #fbbf24;
-}
-.uvidjaj-switch.active .uvidjaj-knob {
-  background: #f59e0b;
-}
-.uvidjaj-switch.active .uvidjaj-knob::after {
-  left: 18px;
-}
-.uvidjaj-switch .uvidjaj-text { flex: 1; line-height: 1.25; }
+#okolnosti-card.uvidjaj-on .ct-main { color: var(--primary); }
+/* U fullscreen-u podloga ostaje mirna — boja bi se borila sa sadržajem koji se čita */
+#okolnosti-card.uvidjaj-on.fullscreen { background: var(--surface); }
 
 /* Form polja zaglavlja */
 .field {
