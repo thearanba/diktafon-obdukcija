@@ -741,21 +741,47 @@ function closeIzuzetiOverlay() {
 
 // Switch "Uviđaj": ručni prelaz između (a) okolnosti iz naredbe (Claude popunjava) i
 // (b) ličnog uviđaja (ti diktiraš/upisuješ — Auto-popuni NE smije prebrisati).
+// Segmentirani izbor moda — isti oblik kao na home kartici, za fullscreen tijelo.
 function buildUvidjajSwitch() {
   const on = !!STATE.header.uvidjaj_lock;
   const wrap = document.createElement("div");
   wrap.className = "field";
   wrap.innerHTML = `
-    <button type="button" id="uvidjaj-switch" class="uvidjaj-switch ${on ? 'active' : ''}" aria-pressed="${on}">
-      <span class="uvidjaj-knob"></span>
-      <span class="uvidjaj-text">${on
-        ? '📍 UVIĐAJ — lično prisustvo (Claude ne dira)'
-        : '📄 Okolnosti iz naredbe (Claude popunjava)'}</span>
-    </button>
+    <div class="seg-tabs okolnosti-mode" role="group" aria-label="Vrsta unosa">
+      <button class="seg-tab ${on ? '' : 'active'}" type="button" data-uvidjaj="0">Okolnosti slučaja</button>
+      <button class="seg-tab ${on ? 'active' : ''}" type="button" data-uvidjaj="1">Uviđaj</button>
+    </div>
     <div class="extract-hint">${on
-      ? 'Ti upisuješ/diktiraš uviđaj — Auto-popuni ga neće prebrisati.'
-      : 'Auto-popuni iz naredbe puni ovo polje. Uključi za lični uviđaj.'}</div>`;
+      ? '📍 Lično prisustvo — Auto-popuni ovo neće prebrisati.'
+      : '📄 Auto-popuni iz naredbe puni ovo polje.'}</div>`;
   return wrap;
+}
+
+// Jedno mjesto za promjenu moda — zovu ga i home tabovi i tabovi u fullscreen-u.
+function setUvidjajMode(on) {
+  on = !!on;
+  if (!!STATE.header.uvidjaj_lock === on) return;   // već je taj mod — ne diraj ništa
+  STATE.header.uvidjaj_lock = on;
+  STATE.header.okolnosti_label = on ? "Uviđaj" : "Okolnosti slučaja";
+  autoSave();
+  renderOkolnostiCard();
+  toast(on
+    ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
+    : "Okolnosti se popunjavaju iz naredbe", "success");
+}
+
+// Home kartica: tabovi (mod) + red za otvaranje. Naslov je na home sakriven (CSS).
+function syncOkolnostiHome() {
+  const card = document.getElementById("okolnosti-card");
+  if (!card) return;
+  const on = !!STATE.header.uvidjaj_lock;
+  card.classList.toggle("uvidjaj-on", on);
+  card.querySelectorAll(".okolnosti-home [data-uvidjaj]").forEach(b => {
+    b.classList.toggle("active", (b.dataset.uvidjaj === "1") === on);
+    b.setAttribute("aria-pressed", String((b.dataset.uvidjaj === "1") === on));
+  });
+  const meta = document.getElementById("okolnosti-card-meta");
+  if (meta) meta.textContent = okolnostiSnippet();
 }
 
 // Dugmad ispod polja okolnosti/uviđaja: 🎤 diktiranje (Groq) + ✨ Doradi (Claude cleanup).
@@ -815,17 +841,8 @@ function bindOkolnostiCard(scope) {
     });
     autoGrow(ta);
   }
-  const sw = scope.querySelector("#uvidjaj-switch");
-  if (sw) sw.addEventListener("click", () => {
-    const now = !STATE.header.uvidjaj_lock;
-    STATE.header.uvidjaj_lock = now;
-    STATE.header.okolnosti_label = now ? "Uviđaj" : "Okolnosti slučaja";
-    autoSave();
-    renderOkolnostiCard();  // ponovo izgradi karticu s novim modom (tekst ostaje)
-    toast(now
-      ? "Uviđaj UKLJUČEN — Auto-popuni neće dirati okolnosti"
-      : "Okolnosti se popunjavaju iz naredbe", "success");
-  });
+  // [data-uvidjaj] tabove hvata globalni listener (jedno mjesto za home i fullscreen) —
+  // ovdje se namjerno NE bind-uju da se klik ne obradi dvaput.
   const mic = scope.querySelector("#okolnosti-mic");
   if (mic) mic.addEventListener("click", () => toggleOkolnostiMic(mic));
   const dor = scope.querySelector("#okolnosti-cleanup");
@@ -839,7 +856,8 @@ function renderOkolnostiCard() {
   if (!body) return;
   const label = STATE.header.okolnosti_label || "Okolnosti slučaja";
   const title = document.getElementById("okolnosti-card-title");
-  if (title) title.textContent = label;
+  if (title) title.textContent = label;   // vidi se u fullscreen-u (na home ga CSS sakriva)
+  syncOkolnostiHome();
   body.innerHTML = "";
   body.appendChild(buildUvidjajSwitch());
   if (STATE.header.uvidjaj_lock) {
@@ -2155,6 +2173,10 @@ function configCardFsNav(id) {
 }
 
 document.addEventListener("click", e => {
+  // Izbor moda (Okolnosti/Uviđaj) ide PRVI: dodir na tab mijenja SAMO mod i nikad ne
+  // otvara fullscreen — inače bi promašaj usred obdukcije odveo na pogrešan ekran.
+  const modeBtn = e.target.closest("[data-uvidjaj]");
+  if (modeBtn) { setUvidjajMode(modeBtn.dataset.uvidjaj === "1"); return; }
   const opener = e.target.closest("[data-fs-card]");
   if (opener) { enterCardFullscreen(document.getElementById(opener.dataset.fsCard)); return; }
   const closer = e.target.closest("[data-fs-close]");

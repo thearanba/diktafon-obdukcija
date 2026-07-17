@@ -53,17 +53,29 @@
     <div class="card-body" id="header-body"></div>
   </section>
 
-  <!-- Okolnosti slučaja / Uviđaj — kartica na home; klik OTVARA u fullscreen -->
+  <!-- Okolnosti slučaja / Uviđaj — kartica na home; klik OTVARA u fullscreen.
+       Na home je naslov SAKRIVEN (CSS) jer ga tabovi ispod već izgovaraju; u fullscreen-u
+       se prikazuje normalno. Tabovi (mod) i zona za otvaranje su ODVOJENI elementi da
+       promašen dodir ne prebaci mod umjesto da otvori karticu. -->
   <section class="card collapsible" id="okolnosti-card">
     <div class="card-header-row">
       <button class="card-header" data-fs-card="okolnosti-card">
         <span class="section-idx"></span>
         <span class="card-title">
           <span class="ct-main" id="okolnosti-card-title">Okolnosti slučaja</span>
-          <span class="card-meta ct-sub" id="okolnosti-card-meta"></span>
         </span>
       </button>
       <button class="btn-focus" data-fs-close title="Zatvori" aria-label="Zatvori">✕</button>
+    </div>
+    <div class="okolnosti-home">
+      <div class="seg-tabs okolnosti-mode" role="group" aria-label="Vrsta unosa">
+        <button class="seg-tab" type="button" data-uvidjaj="0">Okolnosti slučaja</button>
+        <button class="seg-tab" type="button" data-uvidjaj="1">Uviđaj</button>
+      </div>
+      <button class="card-open-row" data-fs-card="okolnosti-card">
+        <span class="card-meta ct-sub" id="okolnosti-card-meta"></span>
+        <span class="open-chevron" aria-hidden="true">›</span>
+      </button>
     </div>
     <div class="card-body" id="okolnosti-card-body"></div>
   </section>
