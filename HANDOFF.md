@@ -15,6 +15,21 @@ razlika = samo Nerminov template/identitet + zasebni workflow). Oba builda ✅ s
 ⚠ Cherry-pick NE prenosi izmjene `build-v2.yml` na `build-nermin.yml` — to su različiti
 fajlovi, pa izmjenu CI-ja treba ponoviti ručno (jednom već propušteno).
 
+## ⚠ TRAJNA DIVERGENCIJA GRANA — nermin NEMA bravu aplikacije (od `8ac57c7`)
+Odluka korisnika (17.07.2026): Nerminu lozinka/otisak smetaju. **Na v2 sve OSTAJE.**
+Na nermin grani su UKLONJENI: `LoginActivity.kt`, `AppLock.kt`, `BioCrypto.kt`,
+`BioSetup.kt`, `res/layout/activity_login.xml`, svi `login_*` stringovi,
+`settings_bio_toggle`, prekidač za otisak u Postavkama, `androidx.biometric` zavisnost,
+i redirect u `MainActivity.onCreate`.
+- **NE dirati `SecurePrefs`/`security-crypto` ni na jednoj grani** — na njima stoje API
+  ključevi (EncryptedSharedPreferences), nemaju veze s bravom.
+- Ovi fajlovi se od sada RAZLIKUJU među granama: `MainActivity.kt`, `SettingsActivity.kt`,
+  `AndroidManifest.xml`, `strings.xml`, `app/build.gradle`. Cherry-pick sa v2 koji ih
+  dira → **konflikt**; rješavati zadržavajući nermin stranu (bez brave) i uzimajući samo
+  stvarnu izmjenu.
+- Ako se ikad zatraži vraćanje brave na nermin: `git checkout refs/heads/v2 -- <fajlovi>`
+  je najbrži put (fajlovi su na v2 netaknuti).
+
 ## ⚠ APK je sada RELEASE (od `b689edb`) — bitno za sljedeću sesiju
 Oba workflow-a grade `assembleRelease` (ne više `assembleDebug`) → **debuggable=false**.
 Potpisuje se ISTIM `keystore/debug.keystore`, pa se nova verzija i dalje instalira PREKO
