@@ -63,13 +63,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Brava aplikacije: hladni start (ili direktan vanjski poziv) bez otključavanja
-        // ide na LoginActivity. Flag živi u procesu → povratak iz pozadine ne traži ponovo.
-        if (!AppLock.unlocked) {
-            startActivity(Intent(this, LoginActivity::class.java))
-            finish()
-            return
-        }
+        // Nermin verzija NEMA bravu aplikacije (odluka korisnika) — app se otvara odmah.
+        // v2 (Salihbegović) i dalje traži lozinku/otisak pri hladnom startu; zato ovaj
+        // fajl DIVERGIRA između grana i cherry-pick na njemu zna konfliktovati.
+        // Zaštita koja OSTAJE: allowBackup=false, EncryptedSharedPreferences za API
+        // ključeve, release build (nije debuggable), recents bez snimka sadržaja.
 
         webView = WebView(this)
         setContentView(webView)
@@ -541,8 +539,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // Guard-put (preusmjerenje na LoginActivity) završi PRIJE inicijalizacije webView-a —
-        // bezuslovni destroy() bi tu bacio UninitializedPropertyAccessException (pad pri startu)
+        // Rani return iz onCreate (npr. pad pri inicijalizaciji) ostavi webView neinicijalizovan —
+        // bezuslovni destroy() bi tu bacio UninitializedPropertyAccessException
         if (::webView.isInitialized) webView.destroy()
         pyExecutor.shutdownNow()
         super.onDestroy()

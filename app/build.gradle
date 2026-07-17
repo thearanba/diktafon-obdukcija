@@ -93,7 +93,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.webkit:webkit:1.11.0'
-    // App lock: otisak prsta (BiometricPrompt) + šifrovano skladište ključeva/lozinke
-    implementation 'androidx.biometric:biometric:1.1.0'
+    // Nermin verzija nema bravu → androidx.biometric uklonjen (na v2 ostaje).
+    // security-crypto OSTAJE: na njemu stoji EncryptedSharedPreferences za API ključeve.
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 }

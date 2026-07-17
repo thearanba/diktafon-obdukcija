@@ -3,12 +3,8 @@ package ba.forenzika.diktafon
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -19,46 +15,15 @@ class SettingsActivity : AppCompatActivity() {
         // Privatnost: API ključevi ne trebaju u recents-pregled
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
 
-        // API ključevi + brava žive u šifrovanom skladištu (SecurePrefs)
+        // API ključevi žive u šifrovanom skladištu (SecurePrefs) — ostaje i bez brave.
+        // Nermin verzija nema bravu, pa nema ni prekidača za otisak (vidi MainActivity).
         val prefs = SecurePrefs.get(this)
         val etAnthropic = findViewById<EditText>(R.id.et_anthropic)
         val etGroq = findViewById<EditText>(R.id.et_groq)
         val btnSave = findViewById<Button>(R.id.btn_save)
-        val swBiometric = findViewById<SwitchCompat>(R.id.sw_biometric)
 
         etAnthropic.setText(prefs.getString(MainActivity.KEY_ANTHROPIC, ""))
         etGroq.setText(prefs.getString(MainActivity.KEY_GROQ, ""))
-
-        // Prekidač za otisak: vidljiv samo kad je lozinka postavljena i uređaj ima biometriju
-        val bioAvailable = BiometricManager.from(this)
-            .canAuthenticate(BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
-        if (AppLock.isConfigured(prefs) && bioAvailable) {
-            swBiometric.visibility = android.view.View.VISIBLE
-            swBiometric.isChecked = prefs.getBoolean(AppLock.KEY_BIO_ENABLED, false)
-
-            // Uključivanje traži otisak ODMAH (veže Keystore ključ). Bez toga bi prekidač
-            // samo upisao flag, a otključavanje bi pri prvom pokušaju tiho palo na lozinku.
-            val listener = object : android.widget.CompoundButton.OnCheckedChangeListener {
-                override fun onCheckedChanged(sw: android.widget.CompoundButton, checked: Boolean) {
-                    if (!checked) { BioSetup.disable(prefs); return }
-                    sw.isEnabled = false
-                    BioSetup.enable(this@SettingsActivity, prefs) { ok ->
-                        sw.isEnabled = true
-                        if (!ok) {
-                            BioSetup.disable(prefs)
-                            // Vrati prekidač BEZ ponovnog okidanja, pa odmah vrati listener
-                            // (bez ovoga bi ostao null i otisak se više ne bi mogao uključiti).
-                            sw.setOnCheckedChangeListener(null)
-                            sw.isChecked = false
-                            sw.setOnCheckedChangeListener(this)
-                            Toast.makeText(this@SettingsActivity,
-                                getString(R.string.login_bio_failed), Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            }
-            swBiometric.setOnCheckedChangeListener(listener)
-        }
 
         btnSave.setOnClickListener {
             prefs.edit()

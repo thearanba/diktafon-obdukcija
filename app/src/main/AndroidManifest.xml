@@ -50,12 +50,9 @@
             android:label="@string/settings_title"
             android:parentActivityName=".MainActivity" />
 
-        <!-- Brava aplikacije: MainActivity je i dalje launcher (stabilna komponenta/ikona),
-             ali pri hladnom startu odmah preusmjeri ovamo dok se ne otključa -->
-        <activity
-            android:name=".LoginActivity"
-            android:exported="false"
-            android:label="@string/app_name" />
+        <!-- Nermin verzija NEMA bravu aplikacije (nema LoginActivity) — app se otvara odmah.
+             Zaštita koja ostaje: allowBackup=false, EncryptedSharedPreferences za API
+             ključeve, release build (nije debuggable), recents bez snimka sadržaja. -->
 
         <provider
             android:name="androidx.core.content.FileProvider"
